@@ -1,4 +1,4 @@
-# master-project
+# master-project test
 Robustness of European Electricity Price Stability Estimates: A PyPSA-based Replication and Sensitivity Analysis
 
 In this project, the power price simulation from the paper 
