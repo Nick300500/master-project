@@ -1,0 +1,11 @@
+import pandas as pd
+from pathlib import Path
+
+# Welche DE-Zonen haben echte Offshore-Daten?
+offshore_dir = Path("01_data/03_filtered_data_for_prediction_year/Climate Data/Wind Offshore/PECD_Wind_Offshore_2030_edition 2022.1")
+
+for f in sorted(offshore_dir.glob("DE*.csv")):
+    df = pd.read_csv(f, skiprows=10, header=0)
+    col_2012 = [c for c in df.columns if str(c).startswith("2012")][0]
+    mean_cf = pd.to_numeric(df[col_2012], errors="coerce").mean()
+    print(f"{f.name}: CF Ø = {mean_cf:.3f}")
