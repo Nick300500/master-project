@@ -1,0 +1,9 @@
+name,bus,p_nom,marginal_cost,carrier
+Gas_DE,DE,35448.620054347826,132.984,gas
+Oil_DE,DE,849.6499999999999,303.02608695652174,oil
+Biomass_DE,DE,12034.29,60.0,biomass
+WindOn_DE,DE,110000.0,0.0,wind
+WindOff_DE,DE,30048.0,0.0,wind
+Solar_DE,DE,200000.0,0.0,solar
+RoR_DE,DE,4368.4,0.0,hydro
+LoadShedding_DE,DE,1000000.0,3000.0,mismatch
