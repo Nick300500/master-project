@@ -215,8 +215,13 @@ if __name__ == "__main__":
 
     from build_network import build_network
 
+    #ACTIVE_ZONES = ["DE"]
+    #ACTIVE_ZONES = ["DE","FR","CH"]
+    #ACTIVE_ZONES = ["DE", "FR", "AT", "CH", "NL", "BE"]
     #ACTIVE_ZONES = ["DE", "FR", "AT", "CH", "NL", "BE", "CZ", "PL", "DK", "SE", "NO", "FI"]
-    ACTIVE_ZONES = ["DE","FR","CH"]
+    #ACTIVE_ZONES = ["DE", "FR", "AT", "CH", "NL", "BE", "CZ", "PL", "DK", "SE", "NO", "FI", "adriatic", "baltic"]
+    ACTIVE_ZONES = ["DE", "FR", "AT", "CH", "NL", "BE","CZ", "PL", "DK", "SE", "NO", "FI","adriatic", "baltic", "ES", "PT", "IT", "GR", "UK", "IE", "other eastern european"]
+    
     CLIMATE_YEAR = "2012"
 
     print("Baue Netz auf...")
@@ -239,12 +244,11 @@ if __name__ == "__main__":
     status, condition = n.optimize(
         solver_name="gurobi",
         solver_options={
-            "Method"        : 1,
-            "Crossover"     : 0,
-            "Threads"       : 2,
-            #"BarConvTol"    : 1e-6,
-            "DualReductions": 0,
-            "NodefileStart" : 0.5,  # Bei großen Modellen: temporäre Dateien auf Festplatte auslagern
+        "Method"        : 2,
+        "Crossover"     : 0,
+        "Threads"       : 8,
+        "BarConvTol"    : 1e-5, #Changed for computing reasons
+        "DualReductions": 0,
         }
     )
 
