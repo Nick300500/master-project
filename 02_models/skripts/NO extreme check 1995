@@ -1,0 +1,16 @@
+import pandas as pd
+import numpy as np
+
+path = ("01_data/04b_accumulated_data_per_node/Climate Data/Hydro Inflows/"
+        "Pump storage - Open Loop/NO_accumulated.csv")
+
+raw = pd.read_csv(path, header=None)
+
+# Rohdaten für 1995 (Spalte 30) ab Zeile 13
+values_1995 = pd.to_numeric(raw.iloc[13:, 30].values, errors="coerce")
+values_1995 = pd.Series(values_1995).fillna(0).values[:53]
+
+print("1995 Rohwerte (GWh/Woche) — alle 53 Wochen:")
+for i, v in enumerate(values_1995):
+    flag = " ← AUSREISSER?" if v > 500 else ""
+    print(f"  Woche {i+1:2d}: {v:10.3f} GWh/Woche{flag}")
