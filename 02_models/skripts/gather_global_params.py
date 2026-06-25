@@ -183,8 +183,8 @@ def load_market_price_cap(path: Path, year: int) -> float:
             return val
     except Exception as e:
         logger.warning(f"Market Price Cap konnte nicht geladen werden: {e}")
-    logger.warning("Nutze Fallback Market Price Cap: 3000 €/MWh (VOLL paper-konform)")
-    return 3000.0
+    logger.warning("Nutze Fallback Market Price Cap: 3000 €/MWh (VOLL paper-konform)") 
+    return 3000.0 #Laut ERAA 8000€, für Paper-konform 3000€
 
 
 def compute_marginal_costs(fuel_costs: dict, efficiencies: dict,
@@ -213,7 +213,7 @@ def compute_marginal_costs(fuel_costs: dict, efficiencies: dict,
         "hydro_res" : 0.0,
         "pump_hydro": 0.0,
         "battery"   : 0.0,
-        "biomass"   : 60.0,
+        "biomass"   : 27.3,
     }
 
     logger.info("Grenzkosten (€/MWh_el):")

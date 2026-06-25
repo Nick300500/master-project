@@ -12,6 +12,14 @@ Zonen schrittweise erweitern:
     ACTIVE_ZONES = ["DE"]                          # Start
     ACTIVE_ZONES = ["DE", "FR", "AT", "NL"]       # Schritt 2
     ACTIVE_ZONES = ALL_ZONES                       # Vollständig
+
+Hinweise zur Hydro-Modellierung:
+    - Reservoir:   efficiency_store=1.0 (kein Pumpverlust), efficiency_dispatch=0.87
+    - PSOpen:      efficiency_store=0.87 (Pumpverlust), p_min_pu aus Pumping-Kapazität
+    - PSClosed:    efficiency_store=0.87, kein natürlicher Inflow
+    - ERAA-Sonderfall NO: Gesamte Speicherwasserkraft unter "PS Open Loop" klassifiziert.
+      caps["p_nom_ps_open"] und ts["hydro_ps_open"] enthalten das vollständige
+      norwegische Reservoir-System. Keine Umleitungslogik nötig — ERAA ist konsistent.
 """
 
 import pypsa
@@ -44,19 +52,81 @@ ALL_ZONES = [
 DSR_PATH = Path("01_data/04b_accumulated_data_per_node/"
                 "ERAA 2022 PEMMDB National Estimates/Explicit DSR.csv")
 
+# ── ERAA 2022 Hydro-Effizienz-Konstanten ────────────────────────────────────
+# Turbinen-Wirkungsgrad (Dispatch): einheitlich für alle Hydro-Typen
+HYDRO_EFF_DISPATCH = 0.87
+# Pump-Wirkungsgrad (Store): nur für echte Pumpspeicher (PS Open/Closed)
+HYDRO_EFF_STORE    = 0.87
+# Reservoir speichert Wasser ohne Energieverlust (kein Pumpen)
+RESERVOIR_EFF_STORE = 1.0
+
 
 # ── Hilfsfunktion: DSR für eine Zone laden ───────────────────────────────────
-def _load_dsr(zone: str) -> pd.DataFrame:
-    """Gibt DSR-Bänder für eine Zone zurück (nur aktive Bänder)."""
+def _load_dsr(zone: str) -> pd.Series:
+    """Gibt DSR-Zeile für eine Zone zurück (leer wenn nicht vorhanden)."""
     try:
         dsr = pd.read_csv(DSR_PATH)
         row = dsr[dsr["Bidding Zone"] == zone]
         if row.empty:
-            return pd.DataFrame()
+            return pd.Series()
         return row.iloc[0]
     except Exception as e:
         logger.warning(f"DSR für {zone} nicht geladen: {e}")
         return pd.Series()
+
+
+# ── Hilfsfunktion: p_min_pu für Pumpspeicher ─────────────────────────────────
+def _pumping_p_min_pu(caps: dict,
+                      turbine_key: str,
+                      pumping_key: str,
+                      zone: str) -> float:
+    """
+    Berechnet p_min_pu für eine Pumpspeicher-StorageUnit.
+
+    PyPSA-Konvention: p_min_pu ≤ 0 bedeutet Pumpen (Laden).
+    Wert = -abs(pumping_capacity) / turbine_capacity.
+
+    Der Pumping-Wert aus TY2030 kann positiv oder negativ in der Quelle sein —
+    abs() stellt sicher dass das Vorzeichen korrekt gesetzt wird.
+
+    Falls pumping_key nicht im caps-Dict vorhanden ist, wird -1 zurückgegeben
+    (PyPSA-Default: volle p_nom als Pumpleistung) und eine Warnung geloggt.
+
+    Args:
+        caps        : Kapazitäts-Dict der Zone
+        turbine_key : Key der Turbinenkapazität z.B. "p_nom_ps_open"
+        pumping_key : Key der Pumpleistung z.B. "p_nom_ps_open_pumping"
+                      Wert kann positiv oder negativ sein (abs() wird angewendet)
+        zone        : Zonenname für Logging
+
+    Returns:
+        p_min_pu als float ≤ 0
+    """
+    p_nom_turbine = caps.get(turbine_key, 0.0)
+    if p_nom_turbine <= 0:
+        return -1.0
+
+    p_nom_pump = caps.get(pumping_key, None)
+
+    if p_nom_pump is None:
+        logger.warning(
+            f"  {zone}: '{pumping_key}' nicht in caps — "
+            f"p_min_pu=-1 (volle Pumpleistung). Pumping-Key in "
+            f"08_load_zone_capacities.py prüfen."
+        )
+        return -1.0
+
+    if p_nom_pump == 0:
+        # Keine Pumpleistung vorgesehen → reine Turbine (z.B. Reservoir)
+        return 0.0
+
+    # abs() weil TY2030-Pumping-Werte manchmal negativ geliefert werden
+    p_min_pu = -abs(p_nom_pump) / p_nom_turbine
+    logger.debug(
+        f"  {zone}: {pumping_key}={p_nom_pump:.1f} MW / "
+        f"{turbine_key}={p_nom_turbine:.1f} MW → p_min_pu={p_min_pu:.4f}"
+    )
+    return p_min_pu
 
 
 # ── Kernfunktion: Zone ins Netz einfügen ─────────────────────────────────────
@@ -159,6 +229,7 @@ def add_zone(n: pypsa.Network,
             ts["solar_pv"].clip(0, 1))
 
     # ── Hydro: Run of River ───────────────────────────────────────────────────
+    # Modelliert als Generator mit CF-Zeitreihe (kein Speicher, kein Dispatch)
     if caps["p_nom_hydro_ror"] > 0:
         ror_inflow = ts["hydro_ror"]
         ror_cf     = (ror_inflow / caps["p_nom_hydro_ror"]).clip(0, 1)
@@ -170,6 +241,7 @@ def add_zone(n: pypsa.Network,
         n.generators_t.p_max_pu[f"RoR_{zone}"] = ror_cf
 
     # ── Hydro: Pondage ────────────────────────────────────────────────────────
+    # Tagesregulierung: Generator mit täglichem Inflow-CF (kein Wochenspeicher)
     if caps["p_nom_hydro_pondage"] > 0:
         pondage_inflow = ts["hydro_pondage"]
         pondage_cf     = (pondage_inflow / caps["p_nom_hydro_pondage"]).clip(0, 1)
@@ -181,49 +253,78 @@ def add_zone(n: pypsa.Network,
         n.generators_t.p_max_pu[f"Pondage_{zone}"] = pondage_cf
 
     # ── Speicher: Reservoir ───────────────────────────────────────────────────
+    # Natürlicher Zufluss, kein Pumpen → efficiency_store=1.0
+    # ERAA-Sonderfall NO: Reservoir-Kapazität ist 0, alles unter PSOpen (s.u.)
     if caps["p_nom_hydro_reservoir"] > 0:
         n.add("StorageUnit", f"Reservoir_{zone}",
               bus=zone,
               p_nom=caps["p_nom_hydro_reservoir"],
+              p_min_pu=0.0,                        # kein Pumpen, nur Turbinieren
               marginal_cost=0.0,
               carrier="hydro",
-              efficiency_store=0.87,
-              efficiency_dispatch=0.87,
+              efficiency_store=RESERVOIR_EFF_STORE, # 1.0: Wasser stauen ohne Verlust
+              efficiency_dispatch=HYDRO_EFF_DISPATCH,
               cyclic_state_of_charge=True,
               max_hours=caps["max_hours_hydro_reservoir"])
         n.storage_units_t.inflow[f"Reservoir_{zone}"] = ts["hydro_reservoir"]
 
     # ── Speicher: Pump Storage Open Loop ─────────────────────────────────────
+    # Natürlicher Zufluss + Pumpen möglich.
+    #
+    # ERAA-Sonderfall NO:
+    #   ENTSO-E klassifiziert die gesamte norwegische Speicherwasserkraft
+    #   als "Pump Storage Open Loop" (kein separater Reservoir-Eintrag).
+    #   caps["p_nom_ps_open"] = 37.830 MW (Turbine)
+    #   caps["p_nom_ps_open_pump"] = 1.093 MW (minimale Pumpleistung)
+    #   ts["hydro_ps_open"] enthält den vollen Reservoir-Inflow (~20.500 MW Ø)
+    #   max_hours ≈ 2.368 h → saisonaler Speicher, physikalisch korrekt.
+    #   Keine Umleitungslogik nötig — ERAA ist intern konsistent.
     if caps["p_nom_ps_open"] > 0:
+        p_min_pu_ps_open = _pumping_p_min_pu(
+            caps,
+            turbine_key="p_nom_ps_open",
+            pumping_key="p_nom_ps_open_pumping",
+            zone=zone,
+        )
         n.add("StorageUnit", f"PSOpen_{zone}",
               bus=zone,
               p_nom=caps["p_nom_ps_open"],
+              p_min_pu=p_min_pu_ps_open,
               marginal_cost=0.0,
               carrier="hydro",
-              efficiency_store=0.87,
-              efficiency_dispatch=0.87,
+              efficiency_store=HYDRO_EFF_STORE,
+              efficiency_dispatch=HYDRO_EFF_DISPATCH,
               cyclic_state_of_charge=True,
               max_hours=caps["max_hours_ps_open"])
         n.storage_units_t.inflow[f"PSOpen_{zone}"] = ts["hydro_ps_open"]
 
     # ── Speicher: Pump Storage Closed Loop ────────────────────────────────────
+    # Kein natürlicher Zufluss (geschlossenes System).
     if caps["p_nom_ps_closed"] > 0:
-        # Kein Inflow: geschlossenes System, kein natürlicher Zufluss
+        p_min_pu_ps_closed = _pumping_p_min_pu(
+            caps,
+            turbine_key="p_nom_ps_closed",
+            pumping_key="p_nom_ps_closed_pumping",
+            zone=zone,
+        )
         n.add("StorageUnit", f"PSClosed_{zone}",
               bus=zone,
               p_nom=caps["p_nom_ps_closed"],
+              p_min_pu=p_min_pu_ps_closed,
               marginal_cost=0.0,
               carrier="hydro",
-              efficiency_store=0.87,
-              efficiency_dispatch=0.87,
+              efficiency_store=HYDRO_EFF_STORE,
+              efficiency_dispatch=HYDRO_EFF_DISPATCH,
               cyclic_state_of_charge=True,
               max_hours=caps["max_hours_ps_closed"])
+        # Kein Inflow für geschlossene Systeme
 
     # ── Speicher: Batterie ────────────────────────────────────────────────────
     if caps["p_nom_battery"] > 0:
         n.add("StorageUnit", f"Battery_{zone}",
               bus=zone,
               p_nom=caps["p_nom_battery"],
+              p_min_pu=-1.0,                       # volle Ladeleistung = p_nom
               marginal_cost=0.0,
               carrier="battery",
               efficiency_store=0.92,
@@ -245,13 +346,13 @@ def add_zone(n: pypsa.Network,
 
             # Max. Stunden/Tag → p_min_pu Untergrenze
             # Wenn hours=24: Last kann komplett auf 0 reduziert werden
-            # Wenn hours=8: Last kann maximal 8/24 = 33% reduziert werden
-            p_min_pu = 1.0 - (hours / 24.0)  # Untergrenze: 1 - max_reduction
+            # Wenn hours=8:  Last kann maximal 8/24 = 33% reduziert werden
+            p_min_pu = 1.0 - (hours / 24.0)
 
             n.add("Load", f"DSR_{zone}_band{band}",
-                bus=zone,
-                p_set=cap,           # feste DSR-Kapazität als Last
-                p_min_pu=p_min_pu)   # kann bis auf p_min_pu reduziert werden
+                  bus=zone,
+                  p_set=cap,
+                  p_min_pu=p_min_pu)
 
     # ── Load Shedding (VOLL) ──────────────────────────────────────────────────
     n.add("Generator", f"LoadShedding_{zone}",
@@ -299,9 +400,6 @@ def build_network(active_zones: list = None,
     # ── Netz initialisieren ───────────────────────────────────────────────────
     n = pypsa.Network()
 
-    # Timestamps: erst nach Last-Zeitreihe der ersten Zone setzen
-    timestamps = None
-
     # Carrier definieren
     for carrier in ["AC", "gas", "coal", "lignite", "nuclear",
                     "biomass", "oil", "wind", "solar",
@@ -309,6 +407,8 @@ def build_network(active_zones: list = None,
         n.add("Carrier", carrier)
 
     # ── Zonen-Schleife ────────────────────────────────────────────────────────
+    timestamps = None
+
     for zone in active_zones:
         logger.info(f"Verarbeite Zone: {zone}")
 
@@ -340,8 +440,7 @@ def build_network(active_zones: list = None,
 if __name__ == "__main__":
     import sys
 
-    # Start: nur Deutschland
-    ACTIVE_ZONES = ["DE"]
+    ACTIVE_ZONES = ["NO"]
     CLIMATE_YEAR = "2012"
 
     n = build_network(active_zones=ACTIVE_ZONES, climate_year=CLIMATE_YEAR)
@@ -355,7 +454,7 @@ if __name__ == "__main__":
 
     print("\n── Kapazitäten ──")
     print(n.generators[["p_nom", "marginal_cost"]].to_string())
-    print(n.storage_units[["p_nom", "max_hours"]].to_string())
+    print(n.storage_units[["p_nom", "max_hours", "p_min_pu"]].to_string())
 
     print("\n── Optimierung ──")
     status, condition = n.optimize(
@@ -386,3 +485,6 @@ if __name__ == "__main__":
         gwh = n.generators_t.p[gen].sum() / 1000
         if gwh > 0.1:
             print(f"  {gen:30s}: {gwh:8.1f} GWh")
+
+    print("\n── Speicher p_min_pu (Pumpleistungs-Check) ──")
+    print(n.storage_units[["p_nom", "p_min_pu", "max_hours"]].to_string())

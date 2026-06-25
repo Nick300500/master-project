@@ -222,7 +222,7 @@ if __name__ == "__main__":
     #ACTIVE_ZONES = ["DE", "FR", "AT", "CH", "NL", "BE", "CZ", "PL", "DK", "SE", "NO", "FI", "adriatic", "baltic"]
     ACTIVE_ZONES = ["DE", "FR", "AT", "CH", "NL", "BE","CZ", "PL", "DK", "SE", "NO", "FI","adriatic", "baltic", "ES", "PT", "IT", "GR", "UK", "IE", "other eastern european"]
     
-    CLIMATE_YEAR = "2012"
+    CLIMATE_YEAR = "2011"
 
     print("Baue Netz auf...")
     n = build_network(active_zones=ACTIVE_ZONES, climate_year=CLIMATE_YEAR)
@@ -277,3 +277,11 @@ if __name__ == "__main__":
         gwh = n.links_t.p0[link].sum() / 1000
         if abs(gwh) > 0.1:
             print(f"  {link:40s}: {gwh:8.1f} GWh")
+
+    # ── Speicher SOC Diagnose ─────────────────────────────────────────────────────
+print("\n── Speicher State of Charge (Diagnose) ──")
+for su in n.storage_units.index:
+    if su in n.storage_units_t.state_of_charge.columns:
+        soc = n.storage_units_t.state_of_charge[su]
+        print(f"  {su:35s}: Ø={soc.mean():.1f}, Min={soc.min():.1f}, "
+              f"Max={soc.max():.1f}, Start={soc.iloc[0]:.1f}, End={soc.iloc[-1]:.1f}")

@@ -1,6 +1,12 @@
 
 01_data/
 
+04_results/
+*-LAPTOP-*.csv
+*-LAPTOP-*.py
+* (*).py
+* (*).csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
