@@ -69,23 +69,38 @@ def process_file(csv_path: Path, output_dir: Path):
     # In HVAC.csv liegen die Zonen-Namen in Index 16 & 17 (Zeile 17/18)
     from_zones_raw = data_cols_df.iloc[10]
     to_zones_raw = data_cols_df.iloc[11]
-    
-    # Identifiziere gültige Interconnection-Spalten
-    # Eine Spalte ist gültig, wenn sowohl from_zone als auch to_zone nicht UNKNOWN sind
+
+    # ── Duplikate auf granularer Zonenebene erkennen und ausschließen ──
+    seen_raw_pairs = set()
+    duplicate_indices = set()
+    for i in range(len(from_zones_raw)):
+        raw_pair = (str(from_zones_raw.iloc[i]).strip().upper(),
+                    str(to_zones_raw.iloc[i]).strip().upper())
+        if raw_pair in seen_raw_pairs:
+            duplicate_indices.add(i)
+            logger.warning(f"  {csv_path.name}: doppelte Rohspalte {i} für "
+                            f"Zonenpaar {raw_pair} - wird übersprungen")
+        else:
+            seen_raw_pairs.add(raw_pair)
+
     valid_col_indices = []
     resolved_from_groups = []
     resolved_to_groups = []
-    
+
     for i in range(len(from_zones_raw)):
+        if i in duplicate_indices:
+            continue
         g_from = resolve_group(from_zones_raw.iloc[i], GROUP_RULES)
         g_to = resolve_group(to_zones_raw.iloc[i], GROUP_RULES)
-        
+
         if g_from != "UNKNOWN" and g_to != "UNKNOWN":
             valid_col_indices.append(i)
             resolved_from_groups.append(g_from)
             resolved_to_groups.append(g_to)
         else:
-            logger.debug(f"  Überspringe Spalte {i} aufgrund unbekannter Zone: Von='{from_zones_raw.iloc[i]}'->'{g_from}', Nach='{to_zones_raw.iloc[i]}'->'{g_to}'")
+            logger.debug(f"  Überspringe Spalte {i} aufgrund unbekannter Zone: "
+                          f"Von='{from_zones_raw.iloc[i]}'->'{g_from}', "
+                          f"Nach='{to_zones_raw.iloc[i]}'->'{g_to}'")
 
     if not valid_col_indices:
         logger.warning(f"Keine gültigen Zonenpaare in {csv_path.name} gefunden (alle UNKNOWN).")
