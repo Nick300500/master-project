@@ -49,8 +49,9 @@ ALL_ZONES = [
 ]
 
 # ── DSR-Pfad ─────────────────────────────────────────────────────────────────
-DSR_PATH = Path("01_data/04b_accumulated_data_per_node/"
-                "ERAA 2022 PEMMDB National Estimates/Explicit DSR.csv")
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+DSR_PATH = (_PROJECT_ROOT / "01_data/04b_accumulated_data_per_node"
+            / "ERAA 2022 PEMMDB National Estimates/Explicit DSR.csv")
 
 # ── ERAA 2022 Hydro-Effizienz-Konstanten ────────────────────────────────────
 # Turbinen-Wirkungsgrad (Dispatch): einheitlich für alle Hydro-Typen

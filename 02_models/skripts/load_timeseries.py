@@ -34,7 +34,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # ── Basispfad ────────────────────────────────────────────────────────────────
-DATA_DIR = Path("01_data/04b_accumulated_data_per_node")
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+DATA_DIR = _PROJECT_ROOT / "01_data/04b_accumulated_data_per_node"
 
 # ── Pfad-Templates (Zone wird als {zone} eingesetzt) ─────────────────────────
 PATHS = {
