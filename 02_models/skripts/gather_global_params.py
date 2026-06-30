@@ -247,7 +247,7 @@ def get_simulation_params(target_year: int = 2030) -> dict:
         "vom_costs"        : vom_costs,
         "marginal_costs"   : mc,
         "market_price_cap" : price_cap,
-        "voll"             : 3000.0,
+        "voll"             : 3000.0, #Fixed to 3000 €/MWh for paper compliance (ERAA 2030)
     }
 
     logger.info(f"Parameter erfolgreich geladen für Jahr {target_year}.")

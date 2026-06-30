@@ -20,7 +20,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
  
 # ── Pfad ─────────────────────────────────────────────────────────────────────
-TY2030_PATH = Path("01_data/04b_accumulated_data_per_node/ERAA 2022 PEMMDB National Estimates/TY 2030.csv")
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+TY2030_PATH = _PROJECT_ROOT / "01_data/04b_accumulated_data_per_node/ERAA 2022 PEMMDB National Estimates/TY 2030.csv"
  
 # ── Spaltenmapping: TY2030-Spalte → interner Schlüssel ──────────────────────
 # Nur Spalten die für den Dispatch relevant sind
