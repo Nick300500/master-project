@@ -23,9 +23,11 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 # ── Pfade zu den akkumulierten Transfer Capacity Dateien ─────────────────────
-TC_DIR    = Path("01_data/04b_accumulated_data_per_node/Transfer capacities")
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+TC_DIR    = _PROJECT_ROOT / "01_data/04b_accumulated_data_per_node/Transfer capacities"
 HVAC_PATH = TC_DIR / "Transfer Capacities_ERAA2022_TY2030/HVAC.csv"
 HVDC_PATH = TC_DIR / "Transfer Capacities_ERAA2022_TY2030/HVDC.csv"
+_RESULTS_DIR = _PROJECT_ROOT / "04_results"
 
 
 def _load_accumulated_ntc(path: Path) -> pd.DataFrame:
@@ -133,11 +135,18 @@ def add_interconnections(n: pypsa.Network,
         # Eindeutiger Name für unidirektionalen Link
         link_name = f"Link_{frm}_to_{to}"
 
-        # Falls Link bereits existiert (z.B. durch doppelte Einträge): überspringen
+        # Falls Link bereits existiert: Kapazität addieren (HVAC + HVDC additiv)
         if link_name in n.links.index:
-            logger.debug(f"  Link {link_name} bereits vorhanden, überspringe")
-            skipped += 1
+            old_cap = n.links.loc[link_name, "p_nom"]
+            new_cap = old_cap + cap
+            n.links.loc[link_name, "p_nom"] = new_cap
+            logger.info(f"  {frm} → {to}: +{cap:.0f} MW addiert "
+                        f"(HVAC {old_cap:.0f} + HVDC {cap:.0f} = {new_cap:.0f} MW)")
+            added_links.append({"name": link_name, "from": frm,
+                                "to": to, "p_nom_mw": new_cap})
+            added += 1
             continue
+
 
         n.add("Link", link_name,
               bus0=frm,
@@ -160,7 +169,7 @@ def save_results(n: pypsa.Network, active_zones: list, climate_year: str):
     
     # Ordnername aus Zonen zusammensetzen
     zones_str = "_".join(active_zones)
-    out_dir = Path("04_results") / f"{zones_str}_CY{climate_year}"
+    out_dir = _RESULTS_DIR / f"{zones_str}_CY{climate_year}"
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # Preiszeitreihen (LMP) pro Zone
@@ -222,7 +231,7 @@ if __name__ == "__main__":
     #ACTIVE_ZONES = ["DE", "FR", "AT", "CH", "NL", "BE", "CZ", "PL", "DK", "SE", "NO", "FI", "adriatic", "baltic"]
     ACTIVE_ZONES = ["DE", "FR", "AT", "CH", "NL", "BE","CZ", "PL", "DK", "SE", "NO", "FI","adriatic", "baltic", "ES", "PT", "IT", "GR", "UK", "IE", "other eastern european"]
     
-    CLIMATE_YEAR = "2011"
+    CLIMATE_YEAR = "1990"
 
     print("Baue Netz auf...")
     n = build_network(active_zones=ACTIVE_ZONES, climate_year=CLIMATE_YEAR)
@@ -279,9 +288,9 @@ if __name__ == "__main__":
             print(f"  {link:40s}: {gwh:8.1f} GWh")
 
     # ── Speicher SOC Diagnose ─────────────────────────────────────────────────────
-print("\n── Speicher State of Charge (Diagnose) ──")
-for su in n.storage_units.index:
-    if su in n.storage_units_t.state_of_charge.columns:
-        soc = n.storage_units_t.state_of_charge[su]
-        print(f"  {su:35s}: Ø={soc.mean():.1f}, Min={soc.min():.1f}, "
-              f"Max={soc.max():.1f}, Start={soc.iloc[0]:.1f}, End={soc.iloc[-1]:.1f}")
+    print("\n── Speicher State of Charge (Diagnose) ──")
+    for su in n.storage_units.index:
+        if su in n.storage_units_t.state_of_charge.columns:
+            soc = n.storage_units_t.state_of_charge[su]
+            print(f"  {su:35s}: Ø={soc.mean():.1f}, Min={soc.min():.1f}, "
+                  f"Max={soc.max():.1f}, Start={soc.iloc[0]:.1f}, End={soc.iloc[-1]:.1f}")

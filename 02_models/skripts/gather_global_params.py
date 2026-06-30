@@ -53,10 +53,11 @@ def load_co2_price(path: Path, year: int) -> float:
     try:
         df = pd.read_csv(path, header=0)
         col = _get_year_col(df, year)
-        if col:
-            price = _parse_range_mean(df[col].iloc[0])
-            logger.info(f"CO2-Preis {year}: {price:.1f} €/t")
-            return price
+        #if col:
+            #price = _parse_range_mean(df[col].iloc[0])
+            #logger.info(f"CO2-Preis {year}: {price:.1f} €/t")
+            #return price #changed due to paper confirmation
+            #return 100.0 #changed due to paper confirmation
     except Exception as e:
         logger.warning(f"CO2-Preis konnte nicht geladen werden: {e}")
     logger.warning("Nutze Fallback CO2-Preis: 100 €/t (ERAA 2030)")
@@ -66,7 +67,8 @@ def load_co2_price(path: Path, year: int) -> float:
 def load_fuel_costs(path: Path, year: int) -> dict:
     fallback = {
         "nuclear"  : 0.47  * 3.6,
-        "lignite"  : 2.25  * 3.6,
+        #"lignite"  : 2.25  * 3.6,
+        "lignite"  : 3.1  * 3.6, #changed due to paper confirmation
         "hard_coal": 3.05  * 3.6,
         "gas"      : 12.20 * 3.6,
         "light_oil": 19.25 * 3.6,
@@ -80,7 +82,7 @@ def load_fuel_costs(path: Path, year: int) -> dict:
             "hard_coal": ["Hard coal", "Hard Coal", "hard_coal"],
             "gas"      : ["Natural gas", "Gas", "gas"],
             "light_oil": ["Light oil", "Oil", "light_oil"],
-            "lignite"  : ["Lignite", "lignite"],
+            #"lignite"  : ["Lignite", "lignite"], #left out due to paper confirmation
         }
         result = dict(fallback)
         for key, aliases in mapping.items():
@@ -100,7 +102,8 @@ def load_fuel_costs(path: Path, year: int) -> dict:
 
 def load_efficiencies(path: Path) -> dict:
     fallback = {
-        "ccgt"     : 0.50,
+        #"ccgt"     : 0.50,
+        "ccgt"     : 0.49, #changed due to paper confirmation
         "ocgt"     : 0.385,
         "lignite"  : 0.405,
         "hard_coal": 0.405,
@@ -110,7 +113,7 @@ def load_efficiencies(path: Path) -> dict:
     try:
         df = pd.read_csv(path, header=0, index_col=0)
         mapping = {
-            "ccgt"     : ["CCGT"],
+            #"ccgt"     : ["CCGT"], left out due to paper confirmation
             "ocgt"     : ["OCGT"],
             "lignite"  : ["Lignite"],
             "hard_coal": ["Hard Coal", "Hard coal"],
@@ -151,7 +154,7 @@ def load_vom(path: Path, year: int) -> dict:
         df = pd.read_csv(path, header=0, index_col=0)
         col = _get_year_col(df, year) or _get_year_col(df, 2030)
         mapping = {
-            "ccgt"     : ["CCGT"],
+            #"ccgt"     : ["CCGT"], left out due to paper confirmation
             "ocgt"     : ["OCGT"],
             "lignite"  : ["Lignite"],
             "hard_coal": ["Hard Coal", "Hard coal"],
@@ -213,7 +216,7 @@ def compute_marginal_costs(fuel_costs: dict, efficiencies: dict,
         "hydro_res" : 0.0,
         "pump_hydro": 0.0,
         "battery"   : 0.0,
-        "biomass"   : 27.3,
+        "biomass"   : 0.0,
     }
 
     logger.info("Grenzkosten (€/MWh_el):")
