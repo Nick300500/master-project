@@ -223,6 +223,9 @@ if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).parent))
 
     from build_network import build_network
+    from add_max_limits import max_limit_extra_functionality
+
+    ENFORCE_MAX_LIMITS = True  # Country-Level-Max-NTC-Limits (siehe add_max_limits.py)
 
     #ACTIVE_ZONES = ["DE"]
     #ACTIVE_ZONES = ["DE","FR","CH"]
@@ -258,7 +261,10 @@ if __name__ == "__main__":
         "Threads"       : 8,
         "BarConvTol"    : 1e-5, #Changed for computing reasons
         "DualReductions": 0,
-        }
+        },
+        extra_functionality=(
+            max_limit_extra_functionality(ACTIVE_ZONES) if ENFORCE_MAX_LIMITS else None
+        ),
     )
 
     if status != "ok":

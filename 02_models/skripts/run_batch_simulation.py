@@ -27,6 +27,7 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 
 from build_network import build_network
 from add_interconnections import add_interconnections, save_results
+from add_max_limits import max_limit_extra_functionality
 
 # ── Konfiguration ─────────────────────────────────────────────────────────────
 ACTIVE_ZONES = [
@@ -38,6 +39,8 @@ ACTIVE_ZONES = [
 YEAR_MIN   = 1982
 YEAR_MAX   = 2015
 N_STEPS    = 10
+
+ENFORCE_MAX_LIMITS = True  # Country-Level-Max-NTC-Limits (siehe add_max_limits.py)
 
 SOLVER_OPTIONS = {
     "Method"        : 2,
@@ -111,6 +114,9 @@ def run_year(climate_year: str) -> bool:
         status, condition = n.optimize(
             solver_name="gurobi",
             solver_options=SOLVER_OPTIONS,
+            extra_functionality=(
+                max_limit_extra_functionality(ACTIVE_ZONES) if ENFORCE_MAX_LIMITS else None
+            ),
         )
 
         if status != "ok":
