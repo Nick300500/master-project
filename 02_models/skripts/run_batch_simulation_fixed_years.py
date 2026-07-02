@@ -21,7 +21,7 @@ from add_interconnections import add_interconnections, save_results
 from add_max_limits import max_limit_extra_functionality
 
 # ── Jahre, die erneut simuliert werden sollen ──────────────────────────────
-YEARS = [1988] #, 1989, 1990, 1993, 2000, 2003, 2004, 2006, 2011, 2012, 2014, 2015]
+YEARS = [1988, 1989, 1990, 1993, 2000, 2003, 2004, 2006, 2011, 2012, 2014, 2015]
 
 ACTIVE_ZONES = [
     "DE", "FR", "AT", "CH", "NL", "BE", "CZ", "PL", "DK", "SE", "NO", "FI",
