@@ -164,12 +164,13 @@ def add_interconnections(n: pypsa.Network,
     logger.info(f"Links hinzugefügt: {added}, übersprungen: {skipped}")
     return pd.DataFrame(added_links)
 
-def save_results(n: pypsa.Network, active_zones: list, climate_year: str):
-    """Speichert alle Ergebnisse in 04_results/{zonen_string}/"""
-    
+def save_results(n: pypsa.Network, active_zones: list, climate_year: str,
+                 suffix: str = ""):
+    """Speichert alle Ergebnisse in 04_results/{zonen_string}_CY{year}{suffix}/"""
+
     # Ordnername aus Zonen zusammensetzen
     zones_str = "_".join(active_zones)
-    out_dir = _RESULTS_DIR / f"{zones_str}_CY{climate_year}"
+    out_dir = _RESULTS_DIR / f"{zones_str}_CY{climate_year}{suffix}"
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # Preiszeitreihen (LMP) pro Zone

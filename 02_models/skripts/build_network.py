@@ -32,7 +32,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
-from gather_global_params import get_simulation_params
+from gather_global_params import get_simulation_params, compute_marginal_costs
 from load_zone_capacities import load_all_zones, get_zone_capacities
 from load_timeseries import load_zone_timeseries
 
@@ -373,7 +373,8 @@ def add_zone(n: pypsa.Network,
 # ── Haupt-API ────────────────────────────────────────────────────────────────
 def build_network(active_zones: list = None,
                   climate_year: str = "2012",
-                  target_year: int = 2030) -> pypsa.Network:
+                  target_year: int = 2030,
+                  gas_price_eur_mwh_th: float = None) -> pypsa.Network:
     """
     Baut ein vollständiges PyPSA-Netz für die gewählten Zonen.
 
@@ -394,6 +395,16 @@ def build_network(active_zones: list = None,
 
     # ── Globale Parameter laden ───────────────────────────────────────────────
     params = get_simulation_params(target_year)
+
+    if gas_price_eur_mwh_th is not None:
+        params["fuel_costs"]["gas"] = gas_price_eur_mwh_th
+        params["marginal_costs"] = compute_marginal_costs(
+            params["fuel_costs"], params["efficiencies"],
+            params["co2_factors"], params["co2_price"],
+            vom=params["vom_costs"],
+        )
+        logger.info(f"Gas-Preis überschrieben: {gas_price_eur_mwh_th:.2f} €/MWh_th "
+                    f"→ Gas-CCGT MC = {params['marginal_costs']['gas_ccgt']:.2f} €/MWh_el")
 
     # ── Kapazitätstabelle laden ───────────────────────────────────────────────
     caps_df = load_all_zones()
