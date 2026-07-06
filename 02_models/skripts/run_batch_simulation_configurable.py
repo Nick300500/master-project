@@ -37,15 +37,16 @@ logger = logging.getLogger(__name__)
 
 # ── Projektpfade ──────────────────────────────────────────────────────────────
 _PROJECT_ROOT = _SCRIPT_DIR.parent.parent
-_NTC_EXCEL    = (_PROJECT_ROOT
+_NTC_CSV      = (_PROJECT_ROOT
                  / "01_data/Exact paper interconnection"
-                 / "NTC_Vergleich_ERAA_Paper_Modell.xlsx")
+                 / "NTC_Vergleich_ERAA_Paper_Modell.csv")
 
 # "OE" ist das Kürzel im Excel für "other eastern european"
 _ZONE_ALIAS = {"OE": "other eastern european"}
 
 # ── Simulationskonstanten (identisch zu run_batch_simulation_fixed_years) ─────
-YEARS = [1988, 1989, 1990, 1993, 2000, 2003, 2004, 2006, 2011, 2012, 2014, 2015]
+#YEARS = [1988, 1989, 1990, 1993, 2000, 2003, 2004, 2006, 2011, 2012, 2014, 2015]
+YEARS = [1990, 2003, 2015]
 
 ACTIVE_ZONES = [
     "DE", "FR", "AT", "CH", "NL", "BE", "CZ", "PL", "DK", "SE", "NO", "FI",
@@ -92,7 +93,7 @@ def prompt_config() -> dict:
     # ── [1] Interconnection-Quelle ────────────────────────────────────────────
     print("\n[1] Interconnection-Kapazitäten (NTC):")
     print("    1  ERAA-Daten  – akkumulierte Transfer-Capacity-CSVs  [Standard]")
-    print("    2  Paper-Werte – NTC_Vergleich_ERAA_Paper_Modell.xlsx")
+    print("    2  Paper-Werte – NTC_Vergleich_ERAA_Paper_Modell.csv")
     ntc_choice    = _ask("    Auswahl [1/2]: ", ("1", "2"))
     use_paper_ntc = ntc_choice == "2"
 
@@ -150,9 +151,9 @@ def _resolve_zone(name: str) -> str:
 
 def _load_paper_ntc_df(active_zones: list) -> list:
     """
-    Liest Paper-NTC-Werte (Spalte 'Paper') aus der Excel-Datei.
+    Liest Paper-NTC-Werte (Spalte 'Paper') aus der CSV-Datei.
 
-    Die Excel enthält eine Kapazität pro Verbindungspaar (symmetrisch).
+    Die CSV enthält eine Kapazität pro Verbindungspaar (symmetrisch).
     Beide Richtungen (A→B und B→A) werden mit identischer Kapazität
     zurückgegeben, analog zur Behandlung in add_interconnections().
 
@@ -160,34 +161,25 @@ def _load_paper_ntc_df(active_zones: list) -> list:
         Liste von dicts: {from_zone, to_zone, ntc_mean_mw}
     """
     try:
-        import openpyxl
-    except ImportError:
-        raise ImportError("openpyxl wird benötigt: pip install openpyxl")
+        import pandas as pd
+    except ImportError as exc:
+        raise ImportError("pandas wird benötigt: pip install pandas") from exc
 
-    if not _NTC_EXCEL.exists():
-        raise FileNotFoundError(f"NTC-Excel nicht gefunden: {_NTC_EXCEL}")
+    if not _NTC_CSV.exists():
+        raise FileNotFoundError(f"NTC-CSV nicht gefunden: {_NTC_CSV}")
 
-    wb = openpyxl.load_workbook(_NTC_EXCEL, read_only=True)
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    wb.close()
-
-    # Kopfzeile: ('Linie', 'ERAA (dedupliziert)', 'Paper', 'Dein Modell (CSV)', ...)
-    # Paper-Wert ist Spaltenindex 2 (0-basiert)
-    PAPER_COL = 2
+    df = pd.read_csv(_NTC_CSV, sep=";", decimal=",", thousands=".")
 
     active_set = set(active_zones)
     result = []
 
-    for row in rows[1:]:          # Zeile 0 = Kopfzeile überspringen
-        if not row or row[0] is None:
-            continue
-        linie = str(row[0]).strip()
+    for _, row in df.iterrows():
+        linie = str(row["Linie"]).strip()
         if "-" not in linie:
-            continue              # Legendenzeilen etc. überspringen
+            continue
 
-        raw_val = row[PAPER_COL]
-        if raw_val is None or str(raw_val).strip() == "":
+        raw_val = row["Paper"]
+        if pd.isna(raw_val):
             continue
         try:
             cap = float(raw_val)
@@ -208,8 +200,22 @@ def _load_paper_ntc_df(active_zones: list) -> list:
                 result.append({"from_zone": frm, "to_zone": to, "ntc_mean_mw": cap})
 
     logger.info(f"Paper-NTC: {len(result)} Verbindungen geladen "
-                f"(aus {_NTC_EXCEL.name})")
+                f"(aus {_NTC_CSV.name})")
     return result
+
+
+def _print_used_capacities(n) -> None:
+    """Gibt die verwendeten Link-Kapazitäten vor dem Optimieren aus."""
+    print("\nVerwendete Kapazitäten vor Optimierung:")
+    if n.links.empty:
+        print("  (keine Links vorhanden)")
+        return
+
+    for link_name, link in n.links.iterrows():
+        p_nom = link.get("p_nom", 0)
+        if p_nom is None:
+            continue
+        print(f"  - {link_name}: {p_nom:.0f} MW")
 
 
 def add_interconnections_paper(n, active_zones: list):
@@ -217,7 +223,7 @@ def add_interconnections_paper(n, active_zones: list):
     Fügt Paper-NTC-Verbindungen als unidirektionale Links ins PyPSA-Netz ein.
 
     Verhält sich identisch zu add_interconnections(), liest die Kapazitäten
-    aber aus der Paper-Excel-Datei statt aus den akkumulierten CSVs.
+    aber aus der Paper-CSV-Datei statt aus den akkumulierten CSVs.
 
     Args:
         n            : PyPSA-Netz (Busse müssen bereits vorhanden sein)
@@ -291,6 +297,8 @@ if __name__ == "__main__":
             add_interconnections_paper(n, active_zones=ACTIVE_ZONES)
         else:
             add_interconnections(n, active_zones=ACTIVE_ZONES)
+
+        _print_used_capacities(n)
 
         status, condition = n.optimize(
             solver_name="gurobi",
