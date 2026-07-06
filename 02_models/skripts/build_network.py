@@ -340,20 +340,20 @@ def add_zone(n: pypsa.Network,
             cap   = dsr_row.get(f"Price Band {band} capacity (MW)", 0)
             price = dsr_row.get(
                 f"Activation Price for demand reduction for Price Band {band} (EUR/MWh)", 0)
-            hours = dsr_row.get(
-                f"Max hours to be used per day for Price Band {band}", 0)
             if cap <= 0 or price <= 0:
                 continue
 
-            # Max. Stunden/Tag → p_min_pu Untergrenze
-            # Wenn hours=24: Last kann komplett auf 0 reduziert werden
-            # Wenn hours=8:  Last kann maximal 8/24 = 33% reduziert werden
-            p_min_pu = 1.0 - (hours / 24.0)
-
-            n.add("Load", f"DSR_{zone}_band{band}",
+            # DSR als Generator (sign=+1, default): Dispatch reduziert Nettolast auf dem Bus.
+            # Aktiviert sich, wenn Marktpreis >= marginal_cost (= Aktivierungspreis).
+            # Tagesstunden-Limit bewusst weggelassen (Vereinfachung).
+            n.add("Generator", f"DSR_{zone}_band{band}",
                   bus=zone,
-                  p_set=cap,
-                  p_min_pu=p_min_pu)
+                  p_nom=cap,
+                  p_nom_extendable=False,
+                  p_min_pu=0.0,
+                  p_max_pu=1.0,
+                  marginal_cost=price,
+                  carrier="DSR")
 
     # ── Load Shedding (VOLL) ──────────────────────────────────────────────────
     n.add("Generator", f"LoadShedding_{zone}",

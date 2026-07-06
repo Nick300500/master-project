@@ -197,7 +197,25 @@ def save_results(n: pypsa.Network, active_zones: list, climate_year: str,
     if len(n.links) > 0:
         n.links[["bus0", "bus1", "p_nom", "carrier"]].to_csv(
             out_dir / "capacities_links.csv")
-    
+        
+    # Lasten (stündlich, alle Load-Komponenten)
+    load_ts = n.loads_t.p if not n.loads_t.p.empty else n.loads_t.p_set
+    load_ts.to_csv(out_dir / "loads.csv")
+
+    # Gesamtlast je Zone (über alle Load-Komponenten pro Zone)
+    total_load_rows = []
+    if not n.loads.empty and "bus" in n.loads.columns:
+        bus_map = n.loads["bus"]  # Series: load-name → bus-name
+        for zone in active_zones:
+            zone_cols = bus_map.index[bus_map == zone].intersection(load_ts.columns)
+            total_load_gwh = load_ts[zone_cols].sum(axis=1).sum() / 1000.0 if len(zone_cols) > 0 else 0.0
+            total_load_rows.append({"zone": zone, "total_load_gwh": total_load_gwh})
+    else:
+        total_load_rows = [{"zone": zone, "total_load_gwh": 0.0} for zone in active_zones]
+
+    total_load = pd.DataFrame(total_load_rows)
+    total_load.to_csv(out_dir / "total_loads.csv", index=False)
+
     # Zusammenfassung (Jahreswerte)
     summary = pd.DataFrame({
         "zone": active_zones,
