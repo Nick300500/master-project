@@ -39,7 +39,8 @@ DATA_DIR = _PROJECT_ROOT / "01_data/04b_accumulated_data_per_node"
 
 # ── Pfad-Templates (Zone wird als {zone} eingesetzt) ─────────────────────────
 PATHS = {
-    "load"           : DATA_DIR / "Demand/Demand Time Series/Demand_TimeSeries_2030_NationalTrends_without_bat/{zone}_accumulated.csv",
+    #"load"           : DATA_DIR / "Demand/Demand Time Series/Demand_TimeSeries_2030_NationalTrends_without_bat/{zone}_accumulated.csv",
+    "load"           : DATA_DIR / "Demand/Aggregated Demand (+bat,EV,HP)/{zone}_accumulated.csv",
     "load_bat"       : DATA_DIR / "Demand/Detailed demand (batteries, EVs, HPs)/BAT_2030/{zone}_accumulated.csv",
     "load_ev"        : DATA_DIR / "Demand/Detailed demand (batteries, EVs, HPs)/EV_2030/{zone}_accumulated.csv",
     "load_hp"        : DATA_DIR / "Demand/Detailed demand (batteries, EVs, HPs)/HP_2030/{zone}_accumulated.csv",
