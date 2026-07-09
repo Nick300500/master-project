@@ -177,17 +177,9 @@ def load_vom(path: Path, year: int) -> dict:
 
 
 def load_market_price_cap(path: Path, year: int) -> float:
-    try:
-        df = pd.read_csv(path, header=0)
-        col = _get_year_col(df, year)
-        if col:
-            val = _parse_range_mean(df[col].iloc[0])
-            logger.info(f"Market Price Cap {year}: {val:.0f} €/MWh")
-            return val
-    except Exception as e:
-        logger.warning(f"Market Price Cap konnte nicht geladen werden: {e}")
-    logger.warning("Nutze Fallback Market Price Cap: 3000 €/MWh (VOLL paper-konform)") 
-    return 3000.0 #Laut ERAA 8000€, für Paper-konform 3000€
+    # Paper-konform: 3000 €/MWh (ERAA-Wert wäre 8000 €/MWh, wird ignoriert)
+    logger.info(f"Market Price Cap {year}: 3000 €/MWh (paper-konform, ERAA-CSV ignoriert)")
+    return 3000.0
 
 
 def compute_marginal_costs(fuel_costs: dict, efficiencies: dict,
@@ -216,7 +208,7 @@ def compute_marginal_costs(fuel_costs: dict, efficiencies: dict,
         "hydro_res" : 0.0,
         "pump_hydro": 0.0,
         "battery"   : 0.0,
-        "biomass"   : 0.0,
+        "biomass"   : 30,
     }
 
     logger.info("Grenzkosten (€/MWh_el):")

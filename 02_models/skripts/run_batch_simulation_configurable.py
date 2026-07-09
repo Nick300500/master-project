@@ -8,9 +8,13 @@ Verwendung (aus Projekt-Root):
     python 02_models/skripts/run_batch_simulation_configurable.py
 """
 
+import argparse
 import sys
 import logging
 from pathlib import Path
+
+import pandas as pd
+import pypsa
 
 _SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPT_DIR))
@@ -18,6 +22,15 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 from build_network import build_network
 from add_interconnections import save_results
 from add_max_limits import max_limit_extra_functionality
+from run_batch_simulation_NO_hydro_fix import (
+    HYDRO_ZONE_CONFIGS,
+    load_no_hydro_weekly_constraints,
+    load_no_hydro_reservoir_capacity,
+    map_weeks_to_snapshots_no_hydro_fix,
+    _adjust_storage_capacity,
+    add_no_hydro_weekly_constraints,
+    _write_weekly_check,
+)
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(levelname)s - %(message)s")
@@ -136,6 +149,13 @@ def add_interconnections_paper(n, active_zones: list):
 # ── Haupt-Loop ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--years", type=int, nargs="+", default=YEARS)
+    parser.add_argument("--suffix", type=str, default=RESULT_SUFFIX)
+    args = parser.parse_args()
+    YEARS = args.years
+    RESULT_SUFFIX = args.suffix
+
     for year in YEARS:
         climate_year = str(year)
         print(f"\n{'='*60}\nKlimajahr {climate_year}\n{'='*60}")
@@ -143,13 +163,57 @@ if __name__ == "__main__":
         n = build_network(active_zones=ACTIVE_ZONES, climate_year=climate_year)
         add_interconnections_paper(n, active_zones=ACTIVE_ZONES)
 
+        zone_weekly_data = {}
+        zone_week_snapshot_map = {}
+        for zone_config in HYDRO_ZONE_CONFIGS:
+            weekly_df, _ = load_no_hydro_weekly_constraints(
+                _PROJECT_ROOT,
+                codes=zone_config["codes"],
+            )
+            reservoir_capacity_gwh, _ = load_no_hydro_reservoir_capacity(
+                _PROJECT_ROOT,
+                codes=zone_config["codes"],
+            )
+
+            if reservoir_capacity_gwh > 0:
+                _adjust_storage_capacity(n, reservoir_capacity_gwh, storage_name=zone_config["storage_name"])
+            else:
+                logger.info(
+                    "Keine aggregierte Reservoir-Kapazität verfügbar für %s; %s bleibt unverändert.",
+                    zone_config["zone"],
+                    zone_config["storage_name"],
+                )
+
+            if not weekly_df.empty:
+                zone_week_snapshot_map[zone_config["zone"]] = map_weeks_to_snapshots_no_hydro_fix(n)
+                zone_weekly_data[zone_config["zone"]] = weekly_df
+
+        extra_functionality = None
+        if ENFORCE_MAX_LIMITS:
+            extra_functionality = max_limit_extra_functionality(ACTIVE_ZONES)
+
+        def combined_extra_functionality(n_network: pypsa.Network, snapshots):
+            if extra_functionality is not None:
+                extra_functionality(n_network, snapshots)
+
+            for zone_config in HYDRO_ZONE_CONFIGS:
+                zone_name = zone_config["zone"]
+                weekly_df = zone_weekly_data.get(zone_name)
+                if weekly_df is None or weekly_df.empty:
+                    continue
+
+                add_no_hydro_weekly_constraints(
+                    n_network,
+                    weekly_df,
+                    zone_week_snapshot_map.get(zone_name, {}),
+                    enforce_min_generation=True,
+                    storage_name=zone_config["storage_name"],
+                )
+
         status, condition = n.optimize(
             solver_name="gurobi",
             solver_options=SOLVER_OPTIONS,
-            extra_functionality=(
-                max_limit_extra_functionality(ACTIVE_ZONES)
-                if ENFORCE_MAX_LIMITS else None
-            ),
+            extra_functionality=combined_extra_functionality,
         )
 
         if status != "ok":
@@ -157,5 +221,20 @@ if __name__ == "__main__":
             continue
 
         save_results(n, ACTIVE_ZONES, climate_year, suffix=RESULT_SUFFIX)
+        result_dir = Path(save_results.__globals__["_RESULTS_DIR"]) / f"{'_'.join(ACTIVE_ZONES)}_CY{climate_year}{RESULT_SUFFIX}"
+        result_dir.mkdir(parents=True, exist_ok=True)
+        for zone_config in HYDRO_ZONE_CONFIGS:
+            zone_name = zone_config["zone"]
+            weekly_df = zone_weekly_data.get(zone_name)
+            if weekly_df is None or weekly_df.empty:
+                continue
+            _write_weekly_check(
+                n,
+                weekly_df,
+                zone_week_snapshot_map.get(zone_name, {}),
+                result_dir,
+                storage_name=zone_config["storage_name"],
+                file_name=f"NO_hydro_fix_weekly_check_{zone_name}.csv",
+            )
 
     print("\nFertig.")
