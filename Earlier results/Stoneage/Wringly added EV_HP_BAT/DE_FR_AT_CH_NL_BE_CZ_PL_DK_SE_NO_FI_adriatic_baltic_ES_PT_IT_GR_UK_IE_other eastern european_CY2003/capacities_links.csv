@@ -1,0 +1,97 @@
+name,bus0,bus1,p_nom,carrier
+Link_adriatic_to_GR,adriatic,GR,1250.0,AC
+Link_GR_to_adriatic,GR,adriatic,1500.0,AC
+Link_BE_to_FR,BE,FR,2800.0,AC
+Link_FR_to_BE,FR,BE,4300.0,AC
+Link_BE_to_NL,BE,NL,3400.0,AC
+Link_NL_to_BE,NL,BE,3400.0,AC
+Link_other eastern european_to_GR,other eastern european,GR,1700.0,AC
+Link_GR_to_other eastern european,GR,other eastern european,1400.0,AC
+Link_other eastern european_to_adriatic,other eastern european,adriatic,4396.460835807262,AC
+Link_adriatic_to_other eastern european,adriatic,other eastern european,5327.994062571363,AC
+Link_CH_to_AT,CH,AT,1200.0,AC
+Link_CH_to_DE,CH,DE,4303.585293445993,AC
+Link_CH_to_FR,CH,FR,1349.8515642840832,AC
+Link_CH_to_IT,CH,IT,3799.2760904316056,AC
+Link_AT_to_CH,AT,CH,1600.0,AC
+Link_DE_to_CH,DE,CH,3300.0,AC
+Link_FR_to_CH,FR,CH,3348.960949988582,AC
+Link_IT_to_CH,IT,CH,1699.9337748344371,AC
+Link_CZ_to_AT,CZ,AT,1000.0,AC
+Link_AT_to_CZ,AT,CZ,1500.0,AC
+Link_CZ_to_DE,CZ,DE,2900.0,AC
+Link_DE_to_CZ,DE,CZ,2800.0,AC
+Link_PL_to_CZ,PL,CZ,1000.0,AC
+Link_CZ_to_PL,CZ,PL,1050.0,AC
+Link_CZ_to_other eastern european,CZ,other eastern european,1900.0,AC
+Link_other eastern european_to_CZ,other eastern european,CZ,1600.0,AC
+Link_DE_to_AT,DE,AT,7500.0,AC
+Link_AT_to_DE,AT,DE,7500.0,AC
+Link_DE_to_DK,DE,DK,4241.040708436754,AC
+Link_DK_to_DE,DK,DE,4226.903820664178,AC
+Link_DE_to_FR,DE,FR,4800.0,AC
+Link_FR_to_DE,FR,DE,4800.0,AC
+Link_DE_to_NL,DE,NL,5000.0,AC
+Link_NL_to_DE,NL,DE,5000.0,AC
+Link_DE_to_PL,DE,PL,2000.0,AC
+Link_PL_to_DE,PL,DE,3000.0,AC
+Link_DK_to_SE,DK,SE,2283.5530419825122,AC
+Link_SE_to_DK,SE,DK,1912.4744395618682,AC
+Link_ES_to_FR,ES,FR,5041.007079241836,AC
+Link_FR_to_ES,FR,ES,5262.525690796986,AC
+Link_ES_to_PT,ES,PT,4200.0,AC
+Link_PT_to_ES,PT,ES,3500.0,AC
+Link_FI_to_SE,FI,SE,3200.0,AC
+Link_SE_to_FI,SE,FI,3200.0,AC
+Link_FR_to_IT,FR,IT,4028.0440739894952,AC
+Link_IT_to_FR,IT,FR,1992.3452843114867,AC
+Link_AT_to_other eastern european,AT,other eastern european,800.0,AC
+Link_other eastern european_to_AT,other eastern european,AT,800.0,AC
+Link_IE_to_UK,IE,UK,2250.0,AC
+Link_UK_to_IE,UK,IE,2200.0,AC
+Link_IT_to_AT,IT,AT,480.75245489837863,AC
+Link_AT_to_IT,AT,IT,658.7782598766842,AC
+Link_IT_to_adriatic,IT,adriatic,1238.3940397350993,AC
+Link_adriatic_to_IT,adriatic,IT,1119.1331354190454,AC
+Link_NO_to_SE,NO,SE,3645.0,AC
+Link_SE_to_NO,SE,NO,3995.0,AC
+Link_adriatic_to_AT,adriatic,AT,946.0835807261932,AC
+Link_AT_to_adriatic,AT,adriatic,886.4295501255995,AC
+Link_other eastern european_to_PL,other eastern european,PL,848.2032427494862,AC
+Link_PL_to_other eastern european,PL,other eastern european,865.7864809317196,AC
+Link_BE_to_UK,BE,UK,1000.0,AC
+Link_UK_to_BE,UK,BE,1000.0,AC
+Link_BE_to_DE,BE,DE,1000.0,AC
+Link_DE_to_BE,DE,BE,1000.0,AC
+Link_DE_to_UK,DE,UK,1400.0,AC
+Link_UK_to_DE,UK,DE,1400.0,AC
+Link_DE_to_NO,DE,NO,1400.0,AC
+Link_NO_to_DE,NO,DE,1400.0,AC
+Link_DE_to_SE,DE,SE,1315.0,AC
+Link_SE_to_DE,SE,DE,1315.0,AC
+Link_DK_to_NL,DK,NL,659.7214293869163,AC
+Link_NL_to_DK,NL,DK,659.7214293869163,AC
+Link_DK_to_NO,DK,NO,1538.0933896563536,AC
+Link_NO_to_DK,NO,DK,1538.0933896563536,AC
+Link_DK_to_UK,DK,UK,1319.4428587738325,AC
+Link_UK_to_DK,UK,DK,1319.4428587738325,AC
+Link_baltic_to_FI,baltic,FI,1016.0,AC
+Link_FI_to_baltic,FI,baltic,1016.0,AC
+Link_FR_to_UK,FR,UK,5400.0,AC
+Link_UK_to_FR,UK,FR,5400.0,AC
+Link_FR_to_IE,FR,IE,700.0,AC
+Link_IE_to_FR,IE,FR,700.0,AC
+Link_GR_to_IT,GR,IT,500.0,AC
+Link_IT_to_GR,IT,GR,500.0,AC
+Link_baltic_to_SE,baltic,SE,700.0,AC
+Link_SE_to_baltic,SE,baltic,700.0,AC
+Link_baltic_to_PL,baltic,PL,700.0,AC
+Link_PL_to_baltic,PL,baltic,700.0,AC
+Link_NL_to_NO,NL,NO,700.0,AC
+Link_NO_to_NL,NO,NL,700.0,AC
+Link_NL_to_UK,NL,UK,1000.0,AC
+Link_UK_to_NL,UK,NL,1000.0,AC
+Link_NO_to_UK,NO,UK,1464.0,AC
+Link_UK_to_NO,UK,NO,1464.0,AC
+Link_SE_to_PL,SE,PL,600.0,AC
+Link_PL_to_SE,PL,SE,600.0,AC
