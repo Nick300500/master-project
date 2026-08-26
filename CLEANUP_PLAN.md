@@ -130,13 +130,20 @@ zufälliger Jahresliste), aber aktuell die *einzige* Möglichkeit, "ERAA-NTC +
 bestimmte Jahre + kein NO-Fix" zu fahren, ohne `run_batch_simulation.py`
 selbst zu ändern.
 
-**Empfehlung für Phase 3/4** (Konsolidierung, kein reines Löschen mehr):
-ein einziges Skript mit CLI-Flags statt vier Dateien, z. B.
+**Umgesetzt (2026-08-27):** Konsolidierung wie oben vorgeschlagen durchgeführt.
+`run_batch_simulation.py` ist jetzt der einzige Einstiegspunkt mit den Flags
+`--years` / `--random N --year-range MIN MAX --skip-existing`,
 `--interconnections {eraa,paper}`, `--no-hydro-fix {off,flow,flow+level}`,
-`--years ...` / `--random N --skip-existing`. Das deckt alle vier heutigen
-Varianten ab und passt zum übergeordneten Ziel (klares, parametrisierbares
-Tool statt Datei-Wildwuchs). Bis diese Konsolidierung ansteht, bleiben alle
-vier Dateien unangetastet.
+`--max-limits/--no-max-limits`, `--suffix`, `--bar-conv-tol`, `--threads`.
+Die NO-Hydro-Fix-Logik wurde nach `no_hydro_fix.py` ausgelagert, die
+Paper-NTC-Logik nach `paper_interconnections.py` (beides eigenständige
+Module statt Funktionen, die aus einem "run_*"-Skript importiert wurden).
+`run_batch_simulation_fixed_years.py`, `run_batch_simulation_NO_hydro_fix.py`
+und `run_batch_simulation_configurable.py` wurden entfernt — ihre komplette
+Funktionalität ist über Flags des neuen `run_batch_simulation.py` erreichbar.
+**Noch nicht gemacht:** ein echter End-to-End-Testlauf des neuen Skripts
+(braucht Gurobi + volle Datenpipeline) — vor dem ersten produktiven Batch-Lauf
+mindestens einen kurzen Testlauf (z. B. 1 Zone, 1 Jahr) durchführen.
 
 **Nicht angefasst** (außerhalb Scope laut Absprache): Datenordner
 (`01_data/04_accumulated_data_per_node_OLD` etc.), Ergebnis-Ordner

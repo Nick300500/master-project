@@ -1,20 +1,18 @@
 """
-run_batch_simulation_NO_hydro_fix.py
-===================================
-Separates Test-Skript für eine NO-spezifische Hydro-Änderung:
+no_hydro_fix.py
+================
+NO-spezifische Hydro-Korrektur für PSOpen_NO, ausgelagert aus den
+PEMMDB-Bietzonen-Dateien der norwegischen Zonen (NOM1, NON1, NOS0):
 
-- Aggregierte Speicherkapazität für PSOpen_NO aus mehreren norwegischen PEMMDB-
-  Bietzonen-Dateien (NOM1, NON1, NOS0)
-- Wöchentliche Erzeugungs-Constraints für PSOpen_NO basierend auf
-  Minimum/Maximum Generated energy pro Woche
+- Aggregierte Speicherkapazität für PSOpen_NO aus mehreren Bietzonen
+- Wöchentliche Erzeugungs-Constraints (min/max) für PSOpen_NO
+- Wöchentliche Reservoir-Level-Constraints (min/max State-of-Charge)
 
-Alle übrigen Generatoren, Lasten und Speicher werden wie in der normalen
-Pipeline aufgebaut; nur NO/PSOpen_NO wird angepasst.
+Wird von run_batch_simulation.py importiert, wenn --no-hydro-fix
+!= off gesetzt ist.
 """
 
-import argparse
 import logging
-import sys
 import warnings
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -23,15 +21,6 @@ import pandas as pd
 import pypsa
 from openpyxl import load_workbook
 
-_SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-from build_network import build_network
-from add_interconnections import add_interconnections, save_results
-from add_max_limits import max_limit_extra_functionality
-
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 warnings.filterwarnings(
@@ -39,25 +28,6 @@ warnings.filterwarnings(
     message=r"Defined names for sheet index .* cannot be located",
     category=UserWarning,
 )
-
-_PROJECT_ROOT = _SCRIPT_DIR.parent.parent
-
-ACTIVE_ZONES = [
-    "DE", "FR", "AT", "CH", "NL", "BE", "CZ", "PL", "DK", "SE", "NO", "FI",
-    "adriatic", "baltic", "ES", "PT", "IT", "GR", "UK", "IE",
-    "other eastern european",
-]
-
-ENFORCE_MAX_LIMITS = True
-
-SOLVER_OPTIONS = {
-    "Method": 2,
-    "Crossover": 0,
-    "Threads": 8,
-    "BarConvTol": 1e-4,
-    "DualReductions": 0,
-    "NumericFocus": 1
-}
 
 NO_BZONE_CODES = ["NOM1", "NON1", "NOS0"]
 HYDRO_ZONE_CONFIGS = [
@@ -165,12 +135,11 @@ def _find_numeric_value(df: pd.DataFrame, labels: List[str]) -> Optional[float]:
     return None
 
 
-def load_no_hydro_weekly_constraints(project_root: Path = None, codes: Optional[List[str]] = None) -> Tuple[pd.DataFrame, Dict[str, float]]:
+def load_no_hydro_weekly_constraints(project_root: Path, codes: Optional[List[str]] = None) -> Tuple[pd.DataFrame, Dict[str, float]]:
     """
     Liest weekly Generation-Bounds aus den norwegischen PEMMDB-Hydro-Dateien,
     summiert sie über alle Bietzonen und gibt sie als DataFrame zurück.
     """
-    project_root = project_root or _PROJECT_ROOT
     files = _find_no_hydro_files(project_root, codes=codes)
 
     if not files:
@@ -279,9 +248,8 @@ def load_no_hydro_weekly_constraints(project_root: Path = None, codes: Optional[
     return weekly_df, reference_caps
 
 
-def load_no_hydro_reservoir_capacity(project_root: Path = None, codes: Optional[List[str]] = None) -> Tuple[float, Dict[str, float]]:
+def load_no_hydro_reservoir_capacity(project_root: Path, codes: Optional[List[str]] = None) -> Tuple[float, Dict[str, float]]:
     """Liest die aufsummierte Speicherenergie-Kapazität aus den norwegischen Dateien."""
-    project_root = project_root or _PROJECT_ROOT
     files = _find_no_hydro_files(project_root, codes=codes)
     reservoir_caps: Dict[str, float] = {}
     total_gwh = 0.0
@@ -324,7 +292,7 @@ def load_no_hydro_reservoir_capacity(project_root: Path = None, codes: Optional[
     return total_gwh, reservoir_caps
 
 
-def map_weeks_to_snapshots_no_hydro_fix(n: pypsa.Network) -> Dict[int, List[pd.Timestamp]]:
+def map_weeks_to_snapshots(n: pypsa.Network) -> Dict[int, List[pd.Timestamp]]:
     """Mappt die Snapshot-Zeiten in 168h-Blöcke auf Wochen 1..N."""
     snapshots = list(n.snapshots)
     week_map: Dict[int, List[pd.Timestamp]] = {}
@@ -340,7 +308,7 @@ def map_weeks_to_snapshots_no_hydro_fix(n: pypsa.Network) -> Dict[int, List[pd.T
     return week_map
 
 
-def _adjust_storage_capacity(n: pypsa.Network, reservoir_capacity_gwh: float, storage_name: str = "PSOpen_NO") -> None:
+def adjust_storage_capacity(n: pypsa.Network, reservoir_capacity_gwh: float, storage_name: str = "PSOpen_NO") -> None:
     """Passt die Speicherkapazität eines StorageUnits an die aggregierte Reservoir-Energie an."""
     if storage_name not in n.storage_units.index:
         logger.warning("%s nicht im Netz gefunden; Speicherkapazität wird nicht angepasst.", storage_name)
@@ -371,21 +339,21 @@ def _adjust_storage_capacity(n: pypsa.Network, reservoir_capacity_gwh: float, st
     )
 
 
-def add_no_hydro_weekly_constraints(
+def add_weekly_flow_constraints(
     n: pypsa.Network,
     weekly_df: pd.DataFrame,
     week_snapshot_map: Dict[int, List[pd.Timestamp]],
     enforce_min_generation: bool = True,
     storage_name: str = "PSOpen_NO",
 ):
-    """Ergänzt wöchentliche Max-/Min-Dispatch-Constraints für PSOpen_NO."""
+    """Ergänzt wöchentliche Max-/Min-Dispatch-Constraints für eine StorageUnit."""
     if storage_name not in n.storage_units.index:
         logger.warning("%s nicht im Netz gefunden; Weekly-Constraints werden übersprungen.", storage_name)
-        return None
+        return
 
     if "StorageUnit-p_dispatch" not in n.model.variables:
         logger.warning("StorageUnit-p_dispatch Variable nicht im Modell gefunden; Weekly-Constraints werden übersprungen.")
-        return None
+        return
 
     p_dispatch = n.model.variables["StorageUnit-p_dispatch"]
     applied = []
@@ -419,10 +387,9 @@ def add_no_hydro_weekly_constraints(
 
     if applied:
         logger.info("%d Weekly-Constraints für %s gesetzt", len(applied), storage_name)
-    return None
 
 
-def _write_weekly_check(
+def write_weekly_check(
     n: pypsa.Network,
     weekly_df: pd.DataFrame,
     week_snapshot_map: Dict[int, List[pd.Timestamp]],
@@ -455,8 +422,8 @@ def _write_weekly_check(
         logger.info("Weekly-Check gespeichert in %s", out_path)
 
 
-def load_no_reservoir_level_constraints_fix(
-    project_root: Path = None,
+def load_reservoir_level_constraints(
+    project_root: Path,
     codes: Optional[List[str]] = None,
     use_technical_bounds: bool = False,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
@@ -472,7 +439,6 @@ def load_no_reservoir_level_constraints_fix(
     klimajahr-spezifischer Block mit denselben Constraint-Typen. Dieser wird
     hier NICHT gelesen (Uniform Constraints in Cols 11/12 werden verwendet).
     """
-    project_root = project_root or _PROJECT_ROOT
     min_label = "Minimum Reservoir level, technical" if use_technical_bounds else "Minimum Reservoir level, historical"
     max_label = "Maximum Reservoir level, technical" if use_technical_bounds else "Maximum Reservoir level, historical"
 
@@ -602,14 +568,14 @@ def load_no_reservoir_level_constraints_fix(
     return level_df, zone_caps_gwh
 
 
-def add_no_reservoir_level_constraints_fix(
+def add_reservoir_level_constraints(
     n: pypsa.Network,
     level_df: pd.DataFrame,
     week_snapshot_map: Dict[int, List[pd.Timestamp]],
     storage_name: str = "PSOpen_NO",
 ) -> None:
     """
-    Setzt wöchentliche State-of-Charge-Constraints für PSOpen_NO.
+    Setzt wöchentliche State-of-Charge-Constraints für eine StorageUnit.
 
     Constraint-Logik: SoC am LETZTEN Snapshot jeder Woche muss im erlaubten
     Band [min_level_mwh, max_level_mwh] liegen. Die letzte Stunde der Woche
@@ -681,7 +647,7 @@ def add_no_reservoir_level_constraints_fix(
         logger.info("%d Reservoir-Level-Constraints für %s gesetzt", len(applied), storage_name)
 
 
-def _write_reservoir_level_check(
+def write_reservoir_level_check(
     n: pypsa.Network,
     level_df: pd.DataFrame,
     week_snapshot_map: Dict[int, List[pd.Timestamp]],
@@ -723,163 +689,105 @@ def _write_reservoir_level_check(
         logger.info("Reservoir-Level-Check gespeichert in %s", out_path)
 
 
-def run_simulation(
-    years: List[int],
-    suffix: str = "_NO_hydro_fix",
-    enforce_weekly_flow_constraint: bool = True,
-    enforce_weekly_level_constraint: bool = True,
-) -> None:
-    for year in years:
-        climate_year = str(year)
-        print(f"\n{'=' * 60}\nKlimajahr {climate_year}\n{'=' * 60}")
+def build_no_hydro_extra_functionality(
+    n: pypsa.Network,
+    project_root: Path,
+    level: str = "flow",
+) -> Tuple[callable, dict]:
+    """
+    Bereitet die NO-Hydro-Fix-Constraints für ein Netz vor und gibt eine
+    extra_functionality-Callback-Funktion zurück (für n.optimize()), sowie
+    die geladenen Wochendaten (für den späteren Check-CSV-Export nach dem Solve).
 
-        n = build_network(active_zones=ACTIVE_ZONES, climate_year=climate_year)
-        add_interconnections(n, active_zones=ACTIVE_ZONES)
+    level: "flow" (nur wöchentliche Erzeugungs-Constraints) oder
+           "flow+level" (zusätzlich wöchentliche Reservoir-Level-Constraints).
+    """
+    zone_weekly_data: Dict[str, pd.DataFrame] = {}
+    zone_level_data: Dict[str, pd.DataFrame] = {}
+    zone_week_snapshot_map: Dict[str, Dict[int, List[pd.Timestamp]]] = {}
 
-        zone_weekly_data = {}
-        zone_level_data = {}
-        zone_week_snapshot_map = {}
+    for zone_config in HYDRO_ZONE_CONFIGS:
+        zone_name = zone_config["zone"]
+        storage_name = zone_config["storage_name"]
+        codes = zone_config["codes"]
 
-        for zone_config in HYDRO_ZONE_CONFIGS:
-            weekly_df, reference_caps = load_no_hydro_weekly_constraints(
-                _PROJECT_ROOT,
-                codes=zone_config["codes"],
+        weekly_df, reference_caps = load_no_hydro_weekly_constraints(project_root, codes=codes)
+        reservoir_capacity_gwh, _ = load_no_hydro_reservoir_capacity(project_root, codes=codes)
+
+        if reservoir_capacity_gwh > 0:
+            adjust_storage_capacity(n, reservoir_capacity_gwh, storage_name=storage_name)
+        else:
+            logger.warning(
+                "Keine aggregierte Reservoir-Kapazität verfügbar für %s; %s bleibt unverändert.",
+                zone_name, storage_name,
             )
-            reservoir_capacity_gwh, reservoir_caps = load_no_hydro_reservoir_capacity(
-                _PROJECT_ROOT,
-                codes=zone_config["codes"],
+
+        week_snap_map = map_weeks_to_snapshots(n)
+        zone_week_snapshot_map[zone_name] = week_snap_map
+
+        if not weekly_df.empty:
+            zone_weekly_data[zone_name] = weekly_df
+            logger.info("Wöchentliche %s-Flow-Constraints vorbereitet: %d Wochen", zone_name, len(weekly_df))
+
+        if level == "flow+level":
+            level_df, _ = load_reservoir_level_constraints(project_root, codes=codes)
+            if not level_df.empty:
+                zone_level_data[zone_name] = level_df
+                logger.info("Reservoir-Level-Constraints vorbereitet für %s: %d Wochen", zone_name, len(level_df))
+
+        if reference_caps:
+            ref_total_mw = sum(reference_caps.values())
+            model_p_nom = float(n.storage_units.at[storage_name, "p_nom"]) if storage_name in n.storage_units.index else float("nan")
+            logger.warning(
+                "%s-Hydro-Referenzleistung: Summe Bietzonen=%.1f MW, Modell %s p_nom=%.1f MW",
+                zone_name, ref_total_mw, storage_name, model_p_nom,
             )
 
-            if reservoir_capacity_gwh > 0:
-                _adjust_storage_capacity(n, reservoir_capacity_gwh, storage_name=zone_config["storage_name"])
-            else:
-                logger.warning(
-                    "Keine aggregierte Reservoir-Kapazität verfügbar für %s; %s bleibt unverändert.",
-                    zone_config["zone"],
-                    zone_config["storage_name"],
-                )
-
-            week_snap_map = map_weeks_to_snapshots_no_hydro_fix(n)
-            zone_week_snapshot_map[zone_config["zone"]] = week_snap_map
-
-            if not weekly_df.empty:
-                zone_weekly_data[zone_config["zone"]] = weekly_df
-                logger.info(
-                    "Wöchentliche %s-Flow-Constraints vorbereitet: %d Wochen",
-                    zone_config["zone"], len(weekly_df),
-                )
-
-            if enforce_weekly_level_constraint:
-                level_df, _ = load_no_reservoir_level_constraints_fix(
-                    _PROJECT_ROOT,
-                    codes=zone_config["codes"],
-                )
-                if not level_df.empty:
-                    zone_level_data[zone_config["zone"]] = level_df
-                    logger.info(
-                        "Reservoir-Level-Constraints vorbereitet für %s: %d Wochen",
-                        zone_config["zone"], len(level_df),
-                    )
-
-            if reference_caps:
-                ref_total_mw = sum(reference_caps.values())
-                model_p_nom = (
-                    float(n.storage_units.at[zone_config["storage_name"], "p_nom"])
-                    if zone_config["storage_name"] in n.storage_units.index
-                    else float("nan")
-                )
-                logger.warning(
-                    "%s-Hydro-Referenzleistung: Summe Bietzonen=%.1f MW, Modell %s p_nom=%.1f MW",
-                    zone_config["zone"], ref_total_mw,
-                    zone_config["storage_name"], model_p_nom,
-                )
-
-        logger.info(
-            "Constraint-Flags: flow=%s, level=%s",
-            enforce_weekly_flow_constraint, enforce_weekly_level_constraint,
-        )
-
-        extra_functionality = None
-        if ENFORCE_MAX_LIMITS:
-            extra_functionality = max_limit_extra_functionality(ACTIVE_ZONES)
-
-        def combined_extra_functionality(n_network: pypsa.Network, snapshots):
-            if extra_functionality is not None:
-                extra_functionality(n_network, snapshots)
-
-            for zone_config in HYDRO_ZONE_CONFIGS:
-                zone_name = zone_config["zone"]
-                snap_map = zone_week_snapshot_map.get(zone_name, {})
-
-                if enforce_weekly_flow_constraint:
-                    weekly_df = zone_weekly_data.get(zone_name)
-                    if weekly_df is not None and not weekly_df.empty:
-                        add_no_hydro_weekly_constraints(
-                            n_network,
-                            weekly_df,
-                            snap_map,
-                            enforce_min_generation=True,
-                            storage_name=zone_config["storage_name"],
-                        )
-
-                if enforce_weekly_level_constraint:
-                    level_df = zone_level_data.get(zone_name)
-                    if level_df is not None and not level_df.empty:
-                        add_no_reservoir_level_constraints_fix(
-                            n_network,
-                            level_df,
-                            snap_map,
-                            storage_name=zone_config["storage_name"],
-                        )
-
-        status, condition = n.optimize(
-            solver_name="gurobi",
-            solver_options=SOLVER_OPTIONS,
-            extra_functionality=combined_extra_functionality,
-        )
-
-        if status != "ok":
-            print(f"Optimierung fehlgeschlagen für {climate_year}: {status}, {condition}")
-            continue
-
-        save_results(n, ACTIVE_ZONES, climate_year, suffix=suffix)
-        result_dir = Path(save_results.__globals__["_RESULTS_DIR"]) / f"{'_'.join(ACTIVE_ZONES)}_CY{climate_year}{suffix}"
-        result_dir.mkdir(parents=True, exist_ok=True)
-
+    def extra_functionality(n_network: pypsa.Network, snapshots):
         for zone_config in HYDRO_ZONE_CONFIGS:
             zone_name = zone_config["zone"]
+            storage_name = zone_config["storage_name"]
             snap_map = zone_week_snapshot_map.get(zone_name, {})
 
             weekly_df = zone_weekly_data.get(zone_name)
             if weekly_df is not None and not weekly_df.empty:
-                _write_weekly_check(
-                    n, weekly_df, snap_map, result_dir,
-                    storage_name=zone_config["storage_name"],
-                    file_name=f"NO_hydro_fix_weekly_check_{zone_name}.csv",
+                add_weekly_flow_constraints(
+                    n_network, weekly_df, snap_map,
+                    enforce_min_generation=True, storage_name=storage_name,
                 )
 
-            level_df = zone_level_data.get(zone_name)
-            if level_df is not None and not level_df.empty:
-                _write_reservoir_level_check(
-                    n, level_df, snap_map, result_dir,
-                    storage_name=zone_config["storage_name"],
-                    file_name=f"NO_hydro_fix_reservoir_level_check_{zone_name}.csv",
-                )
+            if level == "flow+level":
+                level_df = zone_level_data.get(zone_name)
+                if level_df is not None and not level_df.empty:
+                    add_reservoir_level_constraints(n_network, level_df, snap_map, storage_name=storage_name)
 
-    print("\nFertig.")
+    check_data = {
+        "zone_weekly_data": zone_weekly_data,
+        "zone_level_data": zone_level_data,
+        "zone_week_snapshot_map": zone_week_snapshot_map,
+    }
+    return extra_functionality, check_data
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="NO-Hydro-Fix Simulation")
-    parser.add_argument("--years", type=int, nargs="+", default=[2003], help="Klimajahre für die Simulation")
-    parser.add_argument("--suffix", type=str, default="_NO_hydro_fix", help="Suffix für den Ergebnisordner")
-    parser.add_argument("--no-flow", action="store_true", help="Wöchentliche Flow-Constraints deaktivieren")
-    parser.add_argument("--no-level", action="store_true", help="Wöchentliche Reservoir-Level-Constraints deaktivieren")
-    args = parser.parse_args()
+def write_check_files(n: pypsa.Network, check_data: dict, out_dir: Path) -> None:
+    """Schreibt die Weekly-/Reservoir-Level-Check-CSVs nach einem erfolgreichen Solve."""
+    for zone_config in HYDRO_ZONE_CONFIGS:
+        zone_name = zone_config["zone"]
+        storage_name = zone_config["storage_name"]
+        snap_map = check_data["zone_week_snapshot_map"].get(zone_name, {})
 
-    run_simulation(
-        args.years,
-        suffix=args.suffix,
-        enforce_weekly_flow_constraint=not args.no_flow,
-        enforce_weekly_level_constraint=not args.no_level,
-    )
+        weekly_df = check_data["zone_weekly_data"].get(zone_name)
+        if weekly_df is not None and not weekly_df.empty:
+            write_weekly_check(
+                n, weekly_df, snap_map, out_dir,
+                storage_name=storage_name,
+                file_name=f"NO_hydro_fix_weekly_check_{zone_name}.csv",
+            )
+
+        level_df = check_data["zone_level_data"].get(zone_name)
+        if level_df is not None and not level_df.empty:
+            write_reservoir_level_check(
+                n, level_df, snap_map, out_dir,
+                storage_name=storage_name,
+                file_name=f"NO_hydro_fix_reservoir_level_check_{zone_name}.csv",
+            )
