@@ -141,9 +141,25 @@ Module statt Funktionen, die aus einem "run_*"-Skript importiert wurden).
 `run_batch_simulation_fixed_years.py`, `run_batch_simulation_NO_hydro_fix.py`
 und `run_batch_simulation_configurable.py` wurden entfernt — ihre komplette
 Funktionalität ist über Flags des neuen `run_batch_simulation.py` erreichbar.
-**Noch nicht gemacht:** ein echter End-to-End-Testlauf des neuen Skripts
-(braucht Gurobi + volle Datenpipeline) — vor dem ersten produktiven Batch-Lauf
-mindestens einen kurzen Testlauf (z. B. 1 Zone, 1 Jahr) durchführen.
+**Getestet (2026-09-02):** Zwei End-to-End-Testläufe erfolgreich:
+1. `--interconnections eraa --no-hydro-fix off`, Zone DE, Klimajahr 2012 →
+   Optimierung optimal gelöst, Ergebnisse korrekt in `04_results/` gespeichert.
+2. `--interconnections paper --no-hydro-fix flow+level`, Zonen DE+NO,
+   Klimajahr 2012 → Paper-NTC-Links korrekt geladen, alle 52
+   Wochen-Flow- und Reservoir-Level-Constraints gesetzt, Check-CSVs
+   (`NO_hydro_fix_weekly_check_NO.csv`, `NO_hydro_fix_reservoir_level_check_NO.csv`)
+   korrekt geschrieben. Optimierung optimal gelöst.
+3. CLI (`--help`) parst korrekt, alle Flags wie dokumentiert.
+
+Test-Ergebnisordner wieder gelöscht (nur zum Testen erzeugt).
+
+**Nebenbefund:** `gurobipy` fehlte im System-Python UND fehlt in
+`requirements.txt` (im Gegensatz zu `openpyxl`, das zwar installiert werden
+musste, aber immerhin gelistet ist) — vermutlich weil Gurobi bisher über
+eine separate lokale Installation (`C:\gurobi1302`) eingebunden wurde statt
+über pip. Für Phase 3 vormerken: `requirements.txt` (auch UTF-16-Encoding-Fix,
+siehe oben) um `gurobipy` ergänzen, damit ein frischer Checkout ohne
+manuelles Nachinstallieren lauffähig ist.
 
 **Nicht angefasst** (außerhalb Scope laut Absprache): Datenordner
 (`01_data/04_accumulated_data_per_node_OLD` etc.), Ergebnis-Ordner
