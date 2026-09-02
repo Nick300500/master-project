@@ -1,6 +1,6 @@
 """
-11_add_interconnections.py
-==========================
+add_interconnections.py
+========================
 Liest akkumulierte Transfer Capacities aus 04b_accumulated_data_per_node
 und fügt zwei unidirektionale Links pro Verbindungspaar ins PyPSA-Netz ein.
 

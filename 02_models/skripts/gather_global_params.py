@@ -1,5 +1,9 @@
 """
-07_gather_global_params.py
+gather_global_params.py
+========================
+Lädt globale Simulationsparameter (Brennstoffpreise, Wirkungsgrade,
+CO2-Preis/-Faktoren, VOM-Kosten) und berechnet daraus marginale Kosten
+pro Erzeugungstechnologie.
 """
 from pathlib import Path
 import pandas as pd

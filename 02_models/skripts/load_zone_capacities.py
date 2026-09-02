@@ -1,12 +1,12 @@
 """
-08_load_zone_capacities.py
-==========================
+load_zone_capacities.py
+========================
 Lädt installierte Kapazitäten (p_nom) und Speicherkapazitäten (max_hours)
 für alle Zonen aus der akkumulierten TY2030-Datei.
- 
+
 Verwendung in anderen Skripten:
-    from 08_load_zone_capacities import load_all_zones, get_zone_capacities
-    
+    from load_zone_capacities import load_all_zones, get_zone_capacities
+
     all_zones = load_all_zones()          # DataFrame mit allen Zonen
     de_caps   = get_zone_capacities("DE") # Dict für eine Zone
 """
