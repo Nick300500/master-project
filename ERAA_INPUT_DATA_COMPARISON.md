@@ -60,6 +60,128 @@ möglich und teils vermerkt.
    Demand Data, Economic & Technical Parameters, FB Domains, NTCs, Other
    Data, PECD-RES, PECD-Weather).
 
+## Reale Schema-Prüfung: heruntergeladene ERAA-2025-Dateien (2026-09-02)
+
+Der Nutzer hat die ERAA-2025-Pakete heruntergeladen
+(`C:\Users\Nick Herrmann\OneDrive\Desktop\Master Projekt\ERAA Data 2025`).
+Im Gegensatz zum Abschnitt oben (nur Download-Seiten-Kategorien) wurden
+hier die tatsächlichen Dateien geöffnet und mit dem 2022er-Format
+verglichen, das die aktuelle Pipeline erwartet. Ergebnis: **die
+Strukturänderungen sind noch tiefgreifender als die Kategorien-Ebene
+vermuten ließ.**
+
+### PEMMDB-Nachfolger gefunden: `GenerationCapacities.csv` (Dashboard Raw Data)
+
+Das ist die Antwort auf die offene Frage aus dem oberen Abschnitt — die
+PEMMDB-Kapazitätsdaten stecken jetzt in der Dashboard-Rohdaten-Kategorie,
+nicht in "Economic and Technical Investment Parameters" (das enthält nur
+Kosten-/Technik-Parameter je Technologie, keine Zonen-Kapazitäten). Aber
+das Format ist grundlegend anders:
+
+- **Long-Format statt Wide-Format**: Spalten sind `data_version, Target
+  year, Market_Node, Technology, Technology_Simplified,
+  Operational_Status, Value` — eine Zeile pro (Zone, Technologie, Status),
+  nicht eine Zeile pro Zone mit einer Spalte pro Technologie wie in
+  `TY 2030.csv`. `load_zone_capacities.py` (Spalten-Mapping,
+  `pd.read_csv(path, index_col=0)`) kann das nicht ohne Pivot verarbeiten.
+- **Drei Datenversionen in einer Datei gemischt**: `data_version` enthält
+  `"ERAA 2024"`, `"ERAA 2025 pre-CfE"` UND `"ERAA 2025 final"` — ohne
+  Filterung auf die richtige Version würde man Kapazitäten mehrfach zählen
+  oder veraltete Werte verwenden.
+- **`Operational_Status`-Aufsplittung**: Derselbe Zonen/Technologie-Eintrag
+  kann mehrfach vorkommen, aufgeteilt nach Status wie `"Available on
+  market"`, `"Out of market/cannot be used for adequacy"`,
+  `"Non-market"`, `"Mothballed"` etc. (12 verschiedene Werte gefunden).
+  Beispiel DE00/2028/Gas: 24.900 MW "Available on market" **plus separat**
+  900 MW "Out of market/cannot be used for adequacy" — eine naive Summe
+  über alle Zeilen würde nicht-dispatchbare Kapazität mit einrechnen. Das
+  Modell muss jetzt explizit entscheiden, welche Status-Werte als
+  Dispatch-Kapazität zählen.
+- **Deutlich feinere Technologie-Kategorien**: 44 `Technology`-Werte statt
+  der ~15 TY2030-Spalten von 2022. Solar ist z. B. in 6 Unterkategorien
+  aufgeteilt (`Solar (PV)`, `Solar roof-top PV`, `Solar PV rooftop
+  industrial/residential`, `Solar PV utility non-tracking/tracking`, dazu
+  `Solar (thermal)`, `Solar thermal with/without storage`), Wind Offshore
+  in `fixed`/`floating`, Biomasse/Sonstige-EE in `Biofuel`, `Small
+  biomass`, `Waste`, `Geothermal`, `Marine`, `Not defined or splitting not
+  known RES`. Das heutige `COLUMN_MAP` in `load_zone_capacities.py`
+  (1:1-Zuordnung Spaltenname→interner Key) reicht als Konzept nicht mehr —
+  es braucht eine Viele-zu-eins-Aggregationsregel pro Modell-Kategorie.
+- **Vier Zieljahre in einer Datei**: `Target year` ∈ {2028, 2030, 2033,
+  2035} über die `Target year`-Spalte filterbar (statt vier getrennter
+  `TY {jahr}.csv`-Dateien) — an sich eine Verbesserung, aber ein weiterer
+  Parsing-Unterschied.
+- **Neue Zonencodes**: u. a. `ITN1` (Italien Nord), `LUG1` (Luxemburg) —
+  Codes, die nicht dem einfachen `XX00`-Muster entsprechen, auf dem die
+  aktuellen `normalize_zone()`/`extract_zone_from_path()`-Regexes in allen
+  06/04/03-Skripten beruhen. Durchgerechnet: `ITN1` und `LUG1` fallen bei
+  den aktuellen Regex-Mustern (`[A-Z]{2}\d{2}` mit Wortgrenzen, danach
+  `[A-Z]{2}`-Fallback) durch **beide** Erkennungsstufen durch und würden
+  auf den ungefilterten Rohstring zurückfallen — ein konkretes,
+  nachvollziehbares Bug-Risiko bei einer 1:1-Wiederverwendung der
+  bestehenden Skripte, kein bloß theoretisches.
+
+### Demand-Zeitreihen: Klimajahre jetzt anonymisiert
+
+`Demand data/Demand timeseries/{zone}_Demand_total_{jahr}_National
+Trends.csv` hat Spalten `Date, Month, Day, Hour, WS01, WS02, ..., WS36` —
+36 "Weather Scenario"-Spalten statt der 2022-Konvention mit dem echten
+Kalenderjahr als Spaltenname (z. B. `"2012"`). Um weiterhin ein
+bestimmtes historisches Wetterjahr auszuwählen, braucht es zusätzlich die
+neu mitgelieferte `PECD - weather/WeatherScenarios_Mapping.xlsx` als
+Übersetzungstabelle WS-Code → Kalenderjahr — eine Indirektionsebene, die
+es 2022 nicht gab. `_find_climate_col()` in `load_timeseries.py` (sucht
+Spalte per `str(col).startswith(climate_year)`) funktioniert mit diesem
+Schema nicht mehr.
+
+### NTC: von flacher CSV zu interaktivem Excel-Dashboard
+
+`NTCs/NTCs Consolidated TY2030.xlsx` hat vier Sheets (`Drop-down values`,
+`Limits`, `HVAC`, `HVDC`). Die eigentlichen Daten liegen in
+`HVAC`/`HVDC`, im Kern strukturell ähnlich zu 2022 (From-Zeile, To-Zeile,
+dann stündliche Werte je gerichteter Verbindung), aber:
+- als Excel-Workbook mit Array-Formeln und Dropdown-Filterlogik
+  ausgeliefert (`Drop-down values`-Sheet enthält z. B.
+  `=MID(CELL("filename"),...)`-Formeln), nicht als reine Werte-CSV,
+- Verbindungen sind als benannte Paare in einer Header-Zeile organisiert
+  (`"CH00-FR00"`, `"CH00-ITN1"`, ...) statt in zwei getrennten
+  Metadaten-Zeilen (From-Zone-Zeile / To-Zone-Zeile) wie in der 2022er
+  `HVAC.csv`.
+- Der aktuelle Parser `_load_accumulated_ntc()` (liest mit `header=None`
+  feste Zeilenindizes 10/11 für From/To) müsste komplett neu geschrieben
+  werden, nicht nur angepasst.
+
+### Common Data.xlsx: viel granularere Technologie-Charakteristika
+
+Nachfolger von `Additional Data/Annex 1 - Input data` (Fuel Cost,
+Efficiency, VOM, CO2). Statt einem Wert pro grober Kategorie (z. B. ein
+Wirkungsgrad für "Hard Coal") liefert ERAA 2025 jetzt **pro
+Technologie-Untervariante** (z. B. 5 Hard-Coal-Vintages: "old 1/old
+2/New/CCS", 8 Gas-Vintages von "conventional old" bis "CCGT CCS")
+jeweils eigene Effizienz-, CO2-Faktor-, VOM- UND zusätzlich **Min-Time-
+On/Off**-Werte (Hinweis: ERAA selbst rechnet demnach intern mit
+Unit-Commitment-artigen Mindestlaufzeiten — die eigene Pipeline ignoriert
+das bewusst, siehe `MODEL_DOCUMENTATION_FOR_PAPER_COMPARISON.md`
+Abschnitt 11). Zusätzlich neue Sheets `Hydro Normal/Dry/Wet` und `Hydro
+Yearly Classification` — ein Trocken-/Normal-/Nassjahr-Szenariokonzept für
+Hydrologie, das es 2022 in dieser Form nicht gab. `gather_global_params.py`
+müsste nicht nur neue Pfade, sondern eine neue Aggregationsentscheidung
+treffen (welche Vintage-Variante als "der" Wert je Grobkategorie gilt).
+
+### Fazit der Schema-Prüfung
+
+Die Vermutung aus dem theoretischen Kategorien-Vergleich oben bestätigt
+sich in der Praxis vollständig, und zwar deutlicher: **kein einziges** der
+für die Pipeline zentralen Dateiformate (PEMMDB-Kapazitäten, NTC,
+Klimajahr-Kennzeichnung in Demand) ist strukturell mit 2022 kompatibel.
+Das ist keine Frage von Spaltenumbenennungen, sondern von
+Long-vs-Wide-Format, CSV-vs-Excel-Dashboard, und einer neuen
+Versions-/Status-Filterebene, die es 2022 nicht gab. Die in Abschnitt
+"Einordnung für die eigene Pipeline" unten vorgeschlagene Adapter-Schicht
+ist also nicht optional, sondern zwingend — ein Versuch, die 2022er
+Lese-Skripte per Parameter auf 2025 umzubiegen, würde an praktisch jeder
+Stelle scheitern.
+
 ## Einordnung für die eigene Pipeline
 
 Die Befürchtung war berechtigt: **die Formate/Kategorien ändern sich nicht
