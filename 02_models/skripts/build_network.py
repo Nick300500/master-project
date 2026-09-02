@@ -416,7 +416,7 @@ def build_network(active_zones: list = None,
     # Carrier definieren
     for carrier in ["AC", "gas", "coal", "lignite", "nuclear",
                     "biomass", "oil", "wind", "solar",
-                    "hydro", "battery", "mismatch"]:
+                    "hydro", "battery", "mismatch", "DSR"]:
         n.add("Carrier", carrier)
 
     # ── Zonen-Schleife ────────────────────────────────────────────────────────
@@ -446,6 +446,12 @@ def build_network(active_zones: list = None,
                 f"{len(n.generators)} Generatoren, "
                 f"{len(n.storage_units)} Speicher, "
                 f"{len(n.loads)} Lasten")
+
+    # PyPSA-eigene Validierung: findet z.B. verwaiste Busse, fehlende
+    # Carrier oder NaNs, bevor der Solver mit einem kryptischen Fehler
+    # abbricht (oder schlimmer: still ein falsches Ergebnis liefert).
+    n.consistency_check()
+
     return n
 
 

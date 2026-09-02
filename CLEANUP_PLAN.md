@@ -167,6 +167,51 @@ manuelles Nachinstallieren lauffähig ist.
 — dort auch ein identisches Duplikat `plot_results.py` gefunden, aber
 bewusst nicht angefasst).
 
+## PyPSA-Built-ins statt Handarbeit (Stand 2026-09-02)
+
+Durchgeschaut, wo die Pipeline Dinge manuell macht, die PyPSA (1.2.4, lokal
+installiert) bereits eingebaut mitbringt.
+
+**Bewusst manuell (richtig so, nicht anfassen):**
+- `add_max_limits.py`/`no_hydro_fix.py` nutzen `n.model.add_constraints(...)`
+  über `extra_functionality` — das ist die von PyPSA vorgesehene
+  Erweiterungsstelle für projektspezifische Nebenbedingungen (Country-Level-
+  NTC-Limits, wöchentliche Hydro-Constraints gibt es in PyPSA nicht
+  eingebaut, weil sie ERAA-/projektspezifisch sind).
+- `compute_marginal_costs()` und das gesamte ERAA-CSV-Parsing
+  (`_load_accumulated_ntc`, `load_max_limits`, TY2030-Spaltenmapping) sind
+  reine Domänenlogik ohne PyPSA-Entsprechung.
+
+**Umgesetzt:**
+- `n.consistency_check()` in `build_network.py` ergänzt (direkt nach dem
+  Netzaufbau, vor der Rückgabe). Fand sofort einen echten kleinen Bug: der
+  Carrier `"DSR"` wurde bei den DSR-Generatoren verwendet, aber nie über
+  `n.add("Carrier", ...)` registriert (nur `"mismatch"` war in der Liste).
+  Harmlos für die reine Optimierung, aber `n.statistics` (carrier-basierte
+  Auswertung) hätte DSR sonst falsch/gar nicht zugeordnet. Behoben durch
+  Ergänzen von `"DSR"` in der Carrier-Liste. Regressionsgetestet (DE, CY2012
+  und DE+NO, CY2012) — Warnung weg, Optimierung weiterhin erfolgreich.
+
+**Notiert für später (nicht umgesetzt, größerer Schnitt):**
+- `n.statistics` (Accessor mit `installed_capacity()`, `energy_balance()`,
+  `capacity_factor()`, `curtailment()`, `market_value()` etc.) könnte Teile
+  der manuellen Aggregation in `save_results()` (add_interconnections.py)
+  und in `99_marginal_costs.py`/`plot_merit_order_DE.py` durch getestete,
+  vektorisierte PyPSA-Funktionen ersetzen statt Python-Schleifen über
+  `n.generators.index`.
+- `n.export_to_netcdf(path)` / `pypsa.Network(path)` zum Wiedereinlesen
+  könnte die neun manuellen `to_csv()`-Aufrufe in `save_results()` durch
+  einen Aufruf ersetzen (Netz+Zeitreihen+Ergebnisse verlustfrei in einer
+  Datei). **Größter Hebel, aber kein Nulltarif**: `99_marginal_costs.py`,
+  `plot_merit_order_DE.py` und `100_germany_network_analysis.py` erwarten
+  heute die flachen CSVs und müssten mit umgebaut werden — bewusster
+  Phase-5-Entscheid, kein Quick-Win.
+- `add_zone()` in `build_network.py` ruft pro Zone ~10 einzelne
+  `n.add("Generator"/"StorageUnit", ...)` in einer Python-Schleife auf.
+  `n.add()` akzeptiert Listen/Arrays für Name und alle Attribute
+  (vektorisiert) — würde die Zonen-Schleife auf wenige batched Calls
+  reduzieren. Eher Stil/Performance als Korrektheit, niedrige Priorität.
+
 ## Vorgehen
 
 - Phase 0 (dieser Schritt): Auftrag dokumentieren, Branch `clean-code`
