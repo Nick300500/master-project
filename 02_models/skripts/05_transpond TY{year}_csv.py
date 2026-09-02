@@ -12,7 +12,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-SOURCE_DIR = Path("01_data/03_filtered_data_for_prediction_year/ERAA 2022 PEMMDB National Estimates") # Dies sollte das Ausgabeverzeichnis von 05_filter_and_accu_PEMMCD_National_Estimates.py sein
+SOURCE_DIR = Path("01_data/03_filtered_data_for_prediction_year/ERAA 2022 PEMMDB National Estimates") # Dies sollte das Ausgabeverzeichnis von 06_filter_and_accu_PEMMCD_National_Estimates.py sein
 OUTPUT_DIR = Path("01_data/03_filtered_data_for_prediction_year/ERAA 2022 PEMMDB National Estimates")
 
 def transpose_ty_file(csv_path: Path, output_dir: Path, year: str): # 'year' als Parameter hinzugefügt

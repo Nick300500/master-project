@@ -1,11 +1,12 @@
 """
-10_build_network.py
-===================
+build_network.py
+=================
 Baut ein PyPSA-Netz für beliebige Zonen auf.
-Nutzt 07, 08 und 09 als Datenquellen.
+Nutzt gather_global_params.py, load_zone_capacities.py und
+load_timeseries.py als Datenquellen.
 
 Verwendung:
-    from 10_build_network import build_network
+    from build_network import build_network
     n = build_network(active_zones=["DE"], climate_year="2012")
 
 Zonen schrittweise erweitern:
@@ -113,7 +114,7 @@ def _pumping_p_min_pu(caps: dict,
         logger.warning(
             f"  {zone}: '{pumping_key}' nicht in caps — "
             f"p_min_pu=-1 (volle Pumpleistung). Pumping-Key in "
-            f"08_load_zone_capacities.py prüfen."
+            f"load_zone_capacities.py prüfen."
         )
         return -1.0
 

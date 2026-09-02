@@ -1,11 +1,11 @@
 """
-09_load_timeseries.py
-=====================
+load_timeseries.py
+===================
 Lädt alle stündlichen Zeitreihen für eine Zone und ein Klimajahr
 aus den akkumulierten ERAA-Dateien.
 
 Verwendung in anderen Skripten:
-    from 09_load_timeseries import load_zone_timeseries
+    from load_timeseries import load_zone_timeseries
     ts = load_zone_timeseries("DE", climate_year="2012")
 
 Gibt Dictionary zurück mit pd.Series (8760h, Index = Timestamps 2030):
