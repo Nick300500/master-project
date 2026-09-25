@@ -22,11 +22,15 @@ GROUP_RULES = {
     "other eastern european": ["BG", "HU", "RO", "SK"],
 }
 
-FILE_NAMES = ["Capacity Derated.csv", "Explicit DSR.csv", "Forced Outage Rates.csv", "Must-run Capacities.csv",
-              "Reserve Requirements.csv", "TY 2030.csv"] #Hier TY 2030.csv alternativ anpassen
+DEFAULT_YEAR = 2030  # Zieljahr (Target Year); per --year überschreibbar
 
 
-#Filtere alle Zeilen nach dem Jahr, welches später im Terminal angegeben wird
+def file_names_for(year: int) -> list[str]:
+    return ["Capacity Derated.csv", "Explicit DSR.csv", "Forced Outage Rates.csv",
+            "Must-run Capacities.csv", "Reserve Requirements.csv", f"TY {year}.csv"]
+
+
+#Filtere alle Zeilen nach dem Zieljahr
 def filter_by_year(df: pd.DataFrame, year: int) -> pd.DataFrame:
     """Filtert die Zeilen eines DataFrames nach einem bestimmten Jahr."""
     if "TY" not in df.columns:
@@ -57,15 +61,15 @@ def group_zone(zone: str, rules: dict[str, list[str]]) -> str:
     return zone # Wenn keine Regel zutrifft, gib die ursprüngliche Zone zurück
 
 #Gehe jede Zeile einer .csv durch und wende normalize_zone an, um die Gebotszone zu normalisieren
-def process_file(csv_path: Path, output_dir: Path):
+def process_file(csv_path: Path, output_dir: Path, year: int = DEFAULT_YEAR):
     """Verarbeitet eine CSV: Filterung"""
     logger.info(f"Verarbeite Datei: {csv_path.name}")
-    
+
     df = pd.read_csv(csv_path, low_memory=False)
-    
+
     # Überprüfe, ob die Spalte 'TY' vorhanden ist, bevor du filterst
     if "TY" in df.columns:
-        df = filter_by_year(df, 2030) #Hier das gewünschte Jahr angeben
+        df = filter_by_year(df, year)
     
     #Neben Bidding Zone ist auch Bidding Zone* als Spaltenname angegeben, dieses soll umbenannt werden in Bidding Zone
     if "Bidding Zone*" in df.columns:
@@ -97,16 +101,21 @@ def process_file(csv_path: Path, output_dir: Path):
     logger.info(f"Verarbeitete Datei gespeichert: {output_path}")
     
     
-def main():
-    for file_name in FILE_NAMES:
+def main(year: int = DEFAULT_YEAR):
+    for file_name in file_names_for(year):
         csv_path = SOURCE_DIR / file_name
         if csv_path.exists():
-            process_file(csv_path, OUTPUT_DIR)
+            process_file(csv_path, OUTPUT_DIR, year)
         else:
             logger.warning(f"Datei nicht gefunden: {csv_path}")
-        
+
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--year", type=int, default=DEFAULT_YEAR,
+                        help=f"Zieljahr (Target Year) (Default: {DEFAULT_YEAR})")
+    main(parser.parse_args().year)
 
     

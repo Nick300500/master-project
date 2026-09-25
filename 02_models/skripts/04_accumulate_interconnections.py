@@ -67,19 +67,39 @@ def process_file(csv_path: Path, output_dir: Path):
     data_cols_df = df.iloc[:, 2:]
     
     # In HVAC.csv liegen die Zonen-Namen in Index 16 & 17 (Zeile 17/18)
-    from_zones_raw = data_cols_df.iloc[10]
-    to_zones_raw = data_cols_df.iloc[11]
+    from_zones_raw = data_cols_df.iloc[10].copy()
+    to_zones_raw = data_cols_df.iloc[11].copy()
 
-    # ── Duplikate auf granularer Zonenebene erkennen und ausschließen ──
+    # ── Duplikate auf granularer Zonenebene erkennen ──
+    # Bekannter Fehler in den ERAA-Rohdaten (HVDC TY2030): Die Verbindung
+    # FI-EE (EstLink) steht in zwei Spalten, beide als "EE00 -> FI00"
+    # beschriftet; die Rückrichtung "FI00 -> EE00" fehlt. Fehlt zu einem
+    # doppelt vorkommenden Paar die Gegenrichtung in der ganzen Datei, wird
+    # die zweite Spalte als Rückrichtung umgedreht. Andernfalls (Gegenrichtung
+    # vorhanden) ist es ein echtes Duplikat und wird ausgeschlossen.
+    def _pair(i):
+        return (str(from_zones_raw.iloc[i]).strip().upper(),
+                str(to_zones_raw.iloc[i]).strip().upper())
+
+    all_raw_pairs = {_pair(i) for i in range(len(from_zones_raw))}
     seen_raw_pairs = set()
     duplicate_indices = set()
     for i in range(len(from_zones_raw)):
-        raw_pair = (str(from_zones_raw.iloc[i]).strip().upper(),
-                    str(to_zones_raw.iloc[i]).strip().upper())
+        raw_pair = _pair(i)
         if raw_pair in seen_raw_pairs:
-            duplicate_indices.add(i)
-            logger.warning(f"  {csv_path.name}: doppelte Rohspalte {i} für "
-                            f"Zonenpaar {raw_pair} - wird übersprungen")
+            reverse_pair = (raw_pair[1], raw_pair[0])
+            if reverse_pair not in all_raw_pairs:
+                from_val, to_val = from_zones_raw.iloc[i], to_zones_raw.iloc[i]
+                from_zones_raw.iloc[i], to_zones_raw.iloc[i] = to_val, from_val
+                seen_raw_pairs.add(reverse_pair)
+                all_raw_pairs.add(reverse_pair)
+                logger.warning(f"  {csv_path.name}: Rohspalte {i} doppelt beschriftet "
+                                f"als {raw_pair}, Gegenrichtung fehlt - "
+                                f"wird als {reverse_pair} gewertet")
+            else:
+                duplicate_indices.add(i)
+                logger.warning(f"  {csv_path.name}: doppelte Rohspalte {i} für "
+                                f"Zonenpaar {raw_pair} - wird übersprungen")
         else:
             seen_raw_pairs.add(raw_pair)
 
@@ -185,7 +205,12 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     # Suche alle CSVs in den Transfer capacities Unterordnern
+    # Nur die Leitungs-Dateien aggregieren. "Max limit.csv" (Länder-Obergrenzen)
+    # hat ein anderes Layout und wird unverändert von add_max_limits.py gelesen.
     for csv_path in SOURCE_DIR.rglob("*.csv"):
+        if csv_path.name not in ("HVAC.csv", "HVDC.csv"):
+            logger.info(f"Überspringe {csv_path.name} (keine HVAC/HVDC-Datei)")
+            continue
         process_file(csv_path, OUTPUT_DIR)
 
 if __name__ == "__main__":
