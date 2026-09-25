@@ -1,5 +1,0 @@
-name,bus,p_nom,max_hours,carrier
-Reservoir_DE,DE,1297.0,199.36624670626216,hydro
-PSOpen_DE,DE,1644.1,253.48762240739615,hydro
-PSClosed_DE,DE,7381.64,85.33060254881899,hydro
-Battery_DE,DE,3199.99,2.0000093750292973,battery
