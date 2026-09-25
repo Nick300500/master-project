@@ -225,3 +225,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Projektspezifisch (Uebergabe) ---
+# Grosse Ergebnisordner (lokal behalten, nicht versionieren)
+Earlier results/
+Results for ERAA-values with NO problem/
+scratch_test_output/
+Datencheck/
+# Persoenliche Editor-Einstellungen
+.vscode/
