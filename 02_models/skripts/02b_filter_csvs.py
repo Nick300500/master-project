@@ -87,8 +87,11 @@ def main(year):
 
 
 if __name__ == "__main__":
-    year = input("Simulationsjahr: ").strip()
-    if not year:
-        raise SystemExit("Keine Jahreszahl eingegeben. Skript abgebrochen.")
+    import argparse
 
-    main(year)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--year", default="2030",
+                        help="Zieljahr (Target Year), z.B. 2030 (Default: 2030)")
+    args = parser.parse_args()
+
+    main(args.year.strip())

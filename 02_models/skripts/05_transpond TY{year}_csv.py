@@ -51,8 +51,13 @@ def transpose_ty_file(csv_path: Path, output_dir: Path, year: str): # 'year' als
     logger.info(f"Transponierte Datei gespeichert: {output_path}")
     
 if __name__ == "__main__":
-    year = input("Geben Sie das Jahr ein (z.B. 2030): ").strip()
-    
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--year", default="2030",
+                        help="Zieljahr (Target Year), z.B. 2030 (Default: 2030)")
+    year = parser.parse_args().year.strip()
+
     csv_full_path = SOURCE_DIR / f"TY {year}.csv"
 
     if not csv_full_path.exists():
