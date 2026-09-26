@@ -1,40 +1,50 @@
-'''Transponiere eine Date des folders ERAA 2022 PEMMDB National Estimates zur weiterverarbeitung
-Dass die Datei weiterverwendet werden kann die wie anderen, müssen außerdem diverse Umbenennungen etc vorgenommen werden
+"""
+Schritt 4: Kapazitätstabelle drehen
+===================================
+Die ERAA-Tabelle "TY <Zieljahr>.csv" (installierte Kapazitäten) hat die
+Technologien in den Zeilen und die Zonen in den Spalten. Dieser Schritt dreht
+sie so, dass jede Zone eine Zeile ist ("Bidding Zone" als erste Spalte),
+benennt die Speicher-Spalten eindeutig ("... - Energy Storage (MWh)") und
+entfernt die doppelte Zonenspalte in der Mitte.
 
-Unter anderem wird die .csv durch eine Spalte getrennt, in der erneut die Zonenname angegeben werden, diese wurde
-unter anderem entfernt
-'''
+Die Datei wird in config.FILTERED_DIR überschrieben. Ist sie schon gedreht,
+passiert nichts. Muss vor den Schritten 5 (Gewichte für Wind/Solar) und 9
+laufen.
+"""
 
-import pandas as pd
 import logging
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import pandas as pd
+
+import config
+
 logger = logging.getLogger(__name__)
 
-SOURCE_DIR = Path("01_data/03_filtered_data_for_prediction_year/ERAA 2022 PEMMDB National Estimates") # Dies sollte das Ausgabeverzeichnis von 06_filter_and_accu_PEMMCD_National_Estimates.py sein
-OUTPUT_DIR = Path("01_data/03_filtered_data_for_prediction_year/ERAA 2022 PEMMDB National Estimates")
+SOURCE_DIR = config.FILTERED_DIR / config.NATIONAL_ESTIMATES_DIRNAME
+OUTPUT_DIR = SOURCE_DIR
 
-def transpose_ty_file(csv_path: Path, output_dir: Path, year: str): # 'year' als Parameter hinzugefügt
+
+def transpose_ty_file(csv_path: Path, output_dir: Path):
     """Transponiert die TY-Datei für das ausgewählte Jahr."""
     logger.info(f"Verarbeite Datei: {csv_path.name}")
-    
+
     df = pd.read_csv(csv_path, low_memory=False)
-    
+
     #Checke, ob Datei bereits transponiert ist
     if "Bidding Zone" in df.columns:
         logger.info(f"Die Datei {csv_path.name} scheint bereits transponiert zu sein. Überspringe Verarbeitung.")
         return
     # Transponiere das ganze dataframe
     ty_file_transposed = df.transpose()
-    
-    # Lösche die erste Zeile über die Position 
+
+    # Lösche die erste Zeile über die Position
     ty_file_transposed = ty_file_transposed.iloc[0:]
     ty_file_transposed = ty_file_transposed.iloc[:,2:]
-    
+
     #Bennene erste Spalte in Bidding Zone um
     ty_file_transposed.rename(columns={ty_file_transposed.columns[0]: "Bidding Zone"}, inplace=True)
-    
+
     #Benenne Spalte 2 bis 35 nach dem ersten Eintrag der Spalte um
     ty_file_transposed.columns = ["Bidding Zone"] + list(ty_file_transposed.iloc[0, 1:])
     #Lösche die erste Zeile des Frames
@@ -43,24 +53,22 @@ def transpose_ty_file(csv_path: Path, output_dir: Path, year: str): # 'year' als
     ty_file_transposed.columns = [col if i < 28 or i > 33 else f"{col} - Energy Storage (MWh)" for i, col in enumerate(ty_file_transposed.columns)]
     #Lösche Spalte 29
     ty_file_transposed.drop(columns=ty_file_transposed.columns[27], inplace=True)
-    
-    # Speichere die transponierte Datei  
+
+    # Speichere die transponierte Datei
     output_filename = f"{csv_path.stem}.csv"
     output_path = output_dir / output_filename
     ty_file_transposed.to_csv(output_path, index=False)
     logger.info(f"Transponierte Datei gespeichert: {output_path}")
-    
-if __name__ == "__main__":
-    import argparse
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--year", default="2030",
-                        help="Zieljahr (Target Year), z.B. 2030 (Default: 2030)")
-    year = parser.parse_args().year.strip()
 
+def main(year: int = config.TARGET_YEAR):
     csv_full_path = SOURCE_DIR / f"TY {year}.csv"
-
     if not csv_full_path.exists():
         logger.error(f"Fehler: Datei nicht gefunden unter {csv_full_path}")
-    else:
-        transpose_ty_file(csv_full_path, OUTPUT_DIR, year) # 'year' an die Funktion übergeben
+        return
+    transpose_ty_file(csv_full_path, OUTPUT_DIR)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    main()

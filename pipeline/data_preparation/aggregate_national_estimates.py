@@ -1,28 +1,24 @@
-'''Filter die Dateien des Ordners PEMMCD National Estimates nach dem gewünschten Jahr und gruppiere nach den
-Gruppenregeln, wie für die vorherigen Datensätze.'''
+"""
+Schritt 9: Kapazitäten und DSR je Modellzone aggregieren
+========================================================
+Liest die Tabellen aus config.FILTERED_DIR/<ERAA 2022 PEMMDB National Estimates>
+(installierte Kapazitäten "TY <Zieljahr>.csv" aus Schritt 4, Explicit DSR,
+Must-run, ...), filtert auf das Zieljahr, fasst ERAA-Zonen zu Modellzonen
+zusammen (config.ZONE_GROUPS, Summe) und schreibt sie nach
+config.ACCUMULATED_DIR/<ERAA 2022 PEMMDB National Estimates>.
+"""
 
-import pandas as pd
 import logging
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import pandas as pd
+
+import config
+
 logger = logging.getLogger(__name__)
 
-
-SOURCE_DIR = Path("01_data/03_filtered_data_for_prediction_year/ERAA 2022 PEMMDB National Estimates")
-OUTPUT_DIR = Path("01_data/04b_accumulated_data_per_node/ERAA 2022 PEMMDB National Estimates")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Globale Gruppierungsregeln für alle Ordner.
-# Wert: Mapping von Zielgruppe zu Liste der zusammenzufassenden Gebotszonen.
-GROUP_RULES = {
-    # Bestimmte Gebietszonen zusammenfassen.
-    "adriatic": ["AL", "BA", "HR", "ME", "MK", "RS", "SI"],
-    "baltic": ["EE", "LV", "LT"],
-    "other eastern european": ["BG", "HU", "RO", "SK"],
-}
-
-DEFAULT_YEAR = 2030  # Zieljahr (Target Year); per --year überschreibbar
+SOURCE_DIR = config.FILTERED_DIR / config.NATIONAL_ESTIMATES_DIRNAME
+OUTPUT_DIR = config.ACCUMULATED_DIR / config.NATIONAL_ESTIMATES_DIRNAME
 
 
 def file_names_for(year: int) -> list[str]:
@@ -49,9 +45,7 @@ def normalize_zone(candidate: str) -> str:
         return candidate[:2] #Mache aus xxY0 --> xx
     if len(candidate) == 2 and candidate.isalpha():
         return candidate #Wenn schon xx: returne xx
-    else:
-        return candidate[:2]
-    return candidate
+    return candidate[:2]
 
 def group_zone(zone: str, rules: dict[str, list[str]]) -> str:
     """Gruppiert eine Gebotszone basierend auf den definierten Regeln."""
@@ -61,7 +55,7 @@ def group_zone(zone: str, rules: dict[str, list[str]]) -> str:
     return zone # Wenn keine Regel zutrifft, gib die ursprüngliche Zone zurück
 
 #Gehe jede Zeile einer .csv durch und wende normalize_zone an, um die Gebotszone zu normalisieren
-def process_file(csv_path: Path, output_dir: Path, year: int = DEFAULT_YEAR):
+def process_file(csv_path: Path, output_dir: Path, year: int = config.TARGET_YEAR):
     """Verarbeitet eine CSV: Filterung"""
     logger.info(f"Verarbeite Datei: {csv_path.name}")
 
@@ -70,7 +64,7 @@ def process_file(csv_path: Path, output_dir: Path, year: int = DEFAULT_YEAR):
     # Überprüfe, ob die Spalte 'TY' vorhanden ist, bevor du filterst
     if "TY" in df.columns:
         df = filter_by_year(df, year)
-    
+
     #Neben Bidding Zone ist auch Bidding Zone* als Spaltenname angegeben, dieses soll umbenannt werden in Bidding Zone
     if "Bidding Zone*" in df.columns:
         df.rename(columns={"Bidding Zone*": "Bidding Zone"}, inplace=True)
@@ -78,7 +72,7 @@ def process_file(csv_path: Path, output_dir: Path, year: int = DEFAULT_YEAR):
     if "Bidding Zone" in df.columns:
         df["Normalized_Zone"] = df["Bidding Zone"].apply(normalize_zone)
         logger.info(f"Gebotszonen normalisiert. Beispielwerte: {df['Normalized_Zone'].unique()[:5]}")
-        df["Bidding Zone"] = df["Normalized_Zone"].apply(lambda z: group_zone(z, GROUP_RULES))
+        df["Bidding Zone"] = df["Normalized_Zone"].apply(lambda z: group_zone(z, config.ZONE_GROUPS))
     else:
         logger.warning("Die Spalte 'Bidding Zone' ist im DataFrame nicht vorhanden. Keine Normalisierung möglich.")
 
@@ -94,14 +88,15 @@ def process_file(csv_path: Path, output_dir: Path, year: int = DEFAULT_YEAR):
 
         df = df.groupby(group_cols, as_index=False).sum()
         logger.info(f"Nach {', '.join(group_cols)} gruppiert. Beispielwerte: {df['Bidding Zone'].unique()[:5]}")
-        
+
     # Speichere die verarbeitete Datei im Output-Verzeichnis
     output_path = output_dir / csv_path.name
     df.to_csv(output_path, index=False)
     logger.info(f"Verarbeitete Datei gespeichert: {output_path}")
-    
-    
-def main(year: int = DEFAULT_YEAR):
+
+
+def main(year: int = config.TARGET_YEAR):
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     for file_name in file_names_for(year):
         csv_path = SOURCE_DIR / file_name
         if csv_path.exists():
@@ -111,11 +106,5 @@ def main(year: int = DEFAULT_YEAR):
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--year", type=int, default=DEFAULT_YEAR,
-                        help=f"Zieljahr (Target Year) (Default: {DEFAULT_YEAR})")
-    main(parser.parse_args().year)
-
-    
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    main()

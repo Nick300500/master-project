@@ -1,29 +1,24 @@
 """
-run_batch_simulation.py
-=======================
-Einziger Einstiegspunkt für Batch-Simulationsläufe (build_network ->
-Interconnections -> optimize -> save_results), konfigurierbar über
-CLI-Flags statt über separate Skript-Kopien.
+run_simulation.py
+=================
+Simuliert den europäischen Strommarkt für ein oder mehrere Wetterjahre:
+Netz bauen -> Leitungen hinzufügen -> optimieren (Gurobi) -> Ergebnisse
+speichern. Ein Wetterjahr = ein Lauf = ein Ergebnisordner in 04_results/.
 
-Deckt die drei bisher getrennten Szenarien ab:
-  - Standard-ERAA-Lauf mit zufälligen Klimajahren
-    (vorher: run_batch_simulation.py)
-  - Fester Jahres-Lauf mit ERAA-NTC ohne Zusatz-Constraints
-    (vorher: run_batch_simulation_fixed_years.py)
-  - Paper-NTC + NO-Hydro-Fix-Szenarien
-    (vorher: run_batch_simulation_configurable.py /
-    run_batch_simulation_NO_hydro_fix.py)
+Voraussetzung: 01_data/04b_accumulated_data_per_node/ existiert
+(fertig erhalten oder mit main/prepare_data.py erzeugt).
 
-Beispiele (aus Projekt-Root):
-    # 10 zufällige, noch nicht simulierte Klimajahre, Standard-ERAA-NTC
-    python 02_models/skripts/run_batch_simulation.py
+Defaults stehen in config.py; die Flags unten überschreiben sie pro Lauf.
 
-    # bestimmte Klimajahre, Standard-ERAA-NTC
-    python 02_models/skripts/run_batch_simulation.py --years 2011 2012 2014
+Beispiele (aus dem Projekt-Root):
+    # ein Wetterjahr, Standard-Szenario aus config.py
+    python main/run_simulation.py --years 2012
+
+    # 10 zufällige, noch nicht simulierte Wetterjahre aus 1982-2015
+    python main/run_simulation.py
 
     # Paper-NTC + vollständiger NO-Hydro-Fix (Flow + Reservoir-Level)
-    python 02_models/skripts/run_batch_simulation.py --years 2003 \
-        --interconnections paper --no-hydro-fix flow+level
+    python main/run_simulation.py --years 2003 --interconnections paper --no-hydro-fix flow+level
 """
 
 import argparse
@@ -34,53 +29,25 @@ import sys
 import traceback
 from pathlib import Path
 
-import no_hydro_fix
-import paper_interconnections
-from add_interconnections import add_interconnections, save_results
-from add_max_limits import max_limit_extra_functionality
-from build_network import build_network
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-_SCRIPT_DIR = Path(__file__).parent
-_PROJECT_ROOT = _SCRIPT_DIR.parent.parent
-_RESULTS_DIR = _PROJECT_ROOT / "04_results"
-_PAPER_NTC_CSV = (
-    _PROJECT_ROOT / "01_data/Exact paper interconnection" / "NTC_Vergleich_ERAA_Paper_Modell.csv"
-)
+import config
+from pipeline.model import no_hydro_fix, paper_interconnections
+from pipeline.model.build_network import build_network
+from pipeline.model.eraa_interconnections import add_eraa_interconnections
+from pipeline.model.max_limits import max_limit_extra_functionality
+from pipeline.model.results import save_results
 
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-ACTIVE_ZONES = [
-    "DE", "FR", "AT", "CH", "NL", "BE", "CZ", "PL", "DK", "SE", "NO", "FI",
-    "adriatic", "baltic", "ES", "PT", "IT", "GR", "UK", "IE",
-    "other eastern european",
-]
-
-DEFAULT_SOLVER_OPTIONS = {
-    "Method": 2,
-    "Crossover": 0,
-    "Threads": 8,
-    "BarConvTol": 1e-5,
-    "DualReductions": 0,
-}
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(_PROJECT_ROOT / "batch_simulation.log", encoding="utf-8"),
-    ],
-)
 logger = logging.getLogger(__name__)
 
 
 def _already_simulated_years(suffix: str) -> set[int]:
-    """Liest abgeschlossene Klimajahre (für den gegebenen Ergebnis-Suffix) aus 04_results/."""
+    """Liest abgeschlossene Klimajahre (für den gegebenen Ergebnis-Suffix) aus dem Ergebnisordner."""
     done = set()
     pattern = re.compile(r"_CY(\d{4})" + re.escape(suffix) + r"$")
-    if not _RESULTS_DIR.exists():
+    if not config.RESULTS_DIR.exists():
         return done
-    for d in _RESULTS_DIR.iterdir():
+    for d in config.RESULTS_DIR.iterdir():
         if not d.is_dir():
             continue
         m = pattern.search(d.name)
@@ -126,6 +93,7 @@ def run_year(
     solver_options: dict,
 ) -> bool:
     """Führt die vollständige Simulation für ein Klimajahr durch. True bei Erfolg."""
+    zones = config.ACTIVE_ZONES
     logger.info("=" * 60)
     logger.info("Starte Simulation Klimajahr %s (interconnections=%s, no_hydro_fix=%s)",
                 climate_year, interconnections, no_hydro_fix_level)
@@ -133,23 +101,23 @@ def run_year(
 
     try:
         logger.info("Baue Netz auf...")
-        n = build_network(active_zones=ACTIVE_ZONES, climate_year=climate_year)
+        n = build_network(active_zones=zones, climate_year=climate_year)
 
         logger.info("Füge Interconnections hinzu (%s)...", interconnections)
         if interconnections == "paper":
-            paper_interconnections.add_paper_interconnections(n, _PAPER_NTC_CSV, active_zones=ACTIVE_ZONES)
+            paper_interconnections.add_paper_interconnections(n, active_zones=zones)
         else:
-            add_interconnections(n, active_zones=ACTIVE_ZONES)
+            add_eraa_interconnections(n, active_zones=zones)
 
         check_data = None
         no_fix_extra = None
         if no_hydro_fix_level != "off":
             logger.info("Bereite NO-Hydro-Fix vor (Level=%s)...", no_hydro_fix_level)
             no_fix_extra, check_data = no_hydro_fix.build_no_hydro_extra_functionality(
-                n, _PROJECT_ROOT, level=no_hydro_fix_level,
+                n, level=no_hydro_fix_level,
             )
 
-        max_limits_extra = max_limit_extra_functionality(ACTIVE_ZONES) if enforce_max_limits else None
+        max_limits_extra = max_limit_extra_functionality(zones) if enforce_max_limits else None
 
         def extra_functionality(n_network, snapshots):
             if max_limits_extra is not None:
@@ -157,9 +125,9 @@ def run_year(
             if no_fix_extra is not None:
                 no_fix_extra(n_network, snapshots)
 
-        logger.info("Starte Optimierung (Gurobi)...")
+        logger.info("Starte Optimierung (%s)...", config.SOLVER_NAME)
         status, condition = n.optimize(
-            solver_name="gurobi",
+            solver_name=config.SOLVER_NAME,
             solver_options=solver_options,
             extra_functionality=extra_functionality if (max_limits_extra or no_fix_extra) else None,
         )
@@ -168,12 +136,10 @@ def run_year(
             logger.error("Optimierung fehlgeschlagen: status=%s, condition=%s", status, condition)
             return False
 
-        save_results(n, ACTIVE_ZONES, climate_year, suffix=suffix)
+        out_dir = save_results(n, zones, climate_year, suffix=suffix)
 
         if check_data is not None:
-            result_dir = _RESULTS_DIR / f"{'_'.join(ACTIVE_ZONES)}_CY{climate_year}{suffix}"
-            result_dir.mkdir(parents=True, exist_ok=True)
-            no_hydro_fix.write_check_files(n, check_data, result_dir)
+            no_hydro_fix.write_check_files(n, check_data, out_dir)
 
         logger.info("Klimajahr %s erfolgreich abgeschlossen.", climate_year)
         return True
@@ -188,40 +154,60 @@ def main():
     year_group = parser.add_mutually_exclusive_group()
     year_group.add_argument("--years", type=int, nargs="+", help="Feste Liste von Klimajahren")
     year_group.add_argument("--random", type=int, metavar="N",
-                             help="N zufällige, noch nicht simulierte Klimajahre ziehen (Default: 10, falls --years nicht gesetzt)")
-    parser.add_argument("--year-range", type=int, nargs=2, default=[1982, 2015], metavar=("MIN", "MAX"),
-                         help="Jahresbereich für --random (Default: 1982 2015)")
+                            help=f"N zufällige Klimajahre ziehen (Default: {config.RANDOM_YEARS_COUNT}, "
+                                 f"falls --years nicht gesetzt)")
+    parser.add_argument("--year-range", type=int, nargs=2, default=list(config.RANDOM_YEARS_RANGE),
+                        metavar=("MIN", "MAX"),
+                        help="Jahresbereich für --random (Default: %d %d)" % config.RANDOM_YEARS_RANGE)
     parser.add_argument("--skip-existing", dest="skip_existing", action="store_true", default=True,
-                         help="Bei --random bereits simulierte Jahre überspringen (Default: an)")
+                        help="Bei --random bereits simulierte Jahre überspringen (Default: an)")
     parser.add_argument("--no-skip-existing", dest="skip_existing", action="store_false")
-    parser.add_argument("--interconnections", choices=["eraa", "paper"], default="eraa",
-                         help="Quelle der Interconnection-Kapazitäten (Default: eraa)")
-    parser.add_argument("--no-hydro-fix", choices=["off", "flow", "flow+level"], default="off",
-                         help="Tiefe der NO-PSOpen-Hydro-Korrektur (Default: off)")
-    parser.add_argument("--max-limits", dest="max_limits", action="store_true", default=True,
-                         help="Country-Level-Max-NTC-Limits erzwingen (Default: an)")
+    parser.add_argument("--interconnections", choices=["eraa", "paper"], default=config.INTERCONNECTIONS,
+                        help=f"Quelle der Leitungskapazitäten (Default: {config.INTERCONNECTIONS})")
+    parser.add_argument("--no-hydro-fix", choices=["off", "flow", "flow+level"], default=config.NO_HYDRO_FIX,
+                        help=f"Tiefe der Norwegen-Hydro-Korrektur (Default: {config.NO_HYDRO_FIX})")
+    parser.add_argument("--max-limits", dest="max_limits", action="store_true", default=config.ENFORCE_MAX_LIMITS,
+                        help="Länder-Import/Export-Obergrenzen erzwingen (Default: %s)"
+                             % ("an" if config.ENFORCE_MAX_LIMITS else "aus"))
     parser.add_argument("--no-max-limits", dest="max_limits", action="store_false")
     parser.add_argument("--suffix", type=str, default=None,
-                         help="Ergebnis-Ordner-Suffix (Default: automatisch aus den Szenario-Flags abgeleitet)")
-    parser.add_argument("--bar-conv-tol", type=float, default=DEFAULT_SOLVER_OPTIONS["BarConvTol"],
-                         help=f"Gurobi BarConvTol (Default: {DEFAULT_SOLVER_OPTIONS['BarConvTol']})")
-    parser.add_argument("--threads", type=int, default=DEFAULT_SOLVER_OPTIONS["Threads"],
-                         help=f"Gurobi Threads (Default: {DEFAULT_SOLVER_OPTIONS['Threads']})")
+                        help="Ergebnis-Ordner-Suffix (Default: automatisch aus den Szenario-Flags abgeleitet)")
+    parser.add_argument("--bar-conv-tol", type=float, default=config.SOLVER_OPTIONS["BarConvTol"],
+                        help=f"Gurobi BarConvTol (Default: {config.SOLVER_OPTIONS['BarConvTol']})")
+    parser.add_argument("--threads", type=int, default=config.SOLVER_OPTIONS["Threads"],
+                        help=f"Gurobi Threads (Default: {config.SOLVER_OPTIONS['Threads']})")
     args = parser.parse_args()
 
+    # Windows-Konsolen (cp1252) können z.B. '→' nicht darstellen: ersetzen statt abbrechen
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(config.LOG_FILE, encoding="utf-8"),
+        ],
+    )
+
     suffix = args.suffix if args.suffix is not None else _auto_suffix(args.interconnections, args.no_hydro_fix)
-    solver_options = {**DEFAULT_SOLVER_OPTIONS, "BarConvTol": args.bar_conv_tol, "Threads": args.threads}
+    solver_options = {**config.SOLVER_OPTIONS, "BarConvTol": args.bar_conv_tol, "Threads": args.threads}
 
     if args.years is not None:
         years = args.years
         logger.info("Feste Klimajahre: %s", years)
     else:
-        n_random = args.random if args.random is not None else 10
+        n_random = args.random if args.random is not None else config.RANDOM_YEARS_COUNT
         years = _pick_random_years(n_random, args.year_range[0], args.year_range[1], suffix, args.skip_existing)
         if not years:
             logger.info("Keine Jahre zu simulieren. Beende.")
             return
         logger.info("Gewählte Klimajahre (zufällig): %s", years)
+
+    first, last = config.CLIMATE_YEARS_AVAILABLE
+    invalid = [y for y in years if not first <= y <= last]
+    if invalid:
+        parser.error(f"Klimajahre außerhalb {first}-{last}: {invalid}")
 
     results = {}
     for i, year in enumerate(years, 1):

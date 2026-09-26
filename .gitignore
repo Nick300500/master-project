@@ -1,7 +1,7 @@
 
-01_data/
+01_data*/
 
-04_results/
+04_results*/
 *-LAPTOP-*.csv
 *-LAPTOP-*.py
 * (*).py
@@ -234,3 +234,5 @@ scratch_test_output/
 Datencheck/
 # Persoenliche Editor-Einstellungen
 .vscode/
+# Private Notizen (nicht teilen)
+OPEN_QUESTIONS_AUTHORS.md

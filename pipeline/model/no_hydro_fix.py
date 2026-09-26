@@ -1,15 +1,17 @@
 """
 no_hydro_fix.py
-================
-NO-spezifische Hydro-Korrektur für PSOpen_NO, ausgelagert aus den
+===============
+NO-spezifische Hydro-Korrektur für PSOpen_NO, gelesen aus den
 PEMMDB-Bietzonen-Dateien der norwegischen Zonen (NOM1, NON1, NOS0):
 
 - Aggregierte Speicherkapazität für PSOpen_NO aus mehreren Bietzonen
 - Wöchentliche Erzeugungs-Constraints (min/max) für PSOpen_NO
 - Wöchentliche Reservoir-Level-Constraints (min/max State-of-Charge)
 
-Wird von run_batch_simulation.py importiert, wenn --no-hydro-fix
-!= off gesetzt ist.
+Die Excel-Dateien werden unterhalb von config.ACCUMULATED_DIR gesucht
+(liegen in "Climate Data/Hydro Inflows/NO constraint approach/").
+
+Aktiv, wenn config.NO_HYDRO_FIX bzw. --no-hydro-fix != "off".
 """
 
 import logging
@@ -20,6 +22,8 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import pypsa
 from openpyxl import load_workbook
+
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +39,8 @@ HYDRO_ZONE_CONFIGS = [
 ]
 
 
-def _find_no_hydro_files(project_root: Path, codes: Optional[List[str]] = None) -> List[Path]:
-    """Findet relevante norwegische PEMMDB-Hydro-Dateien im Workspace."""
+def _find_no_hydro_files(search_dir: Path, codes: Optional[List[str]] = None) -> List[Path]:
+    """Findet relevante norwegische PEMMDB-Hydro-Dateien unterhalb von search_dir."""
     codes = codes or NO_BZONE_CODES
     candidates: List[Path] = []
     seen = set()
@@ -54,7 +58,7 @@ def _find_no_hydro_files(project_root: Path, codes: Optional[List[str]] = None) 
 
     for code in codes:
         for pattern in patterns:
-            for path in project_root.rglob(pattern.format(code=code)):
+            for path in search_dir.rglob(pattern.format(code=code)):
                 if path.is_file() and path not in seen:
                     candidates.append(path)
                     seen.add(path)
@@ -135,12 +139,12 @@ def _find_numeric_value(df: pd.DataFrame, labels: List[str]) -> Optional[float]:
     return None
 
 
-def load_no_hydro_weekly_constraints(project_root: Path, codes: Optional[List[str]] = None) -> Tuple[pd.DataFrame, Dict[str, float]]:
+def load_no_hydro_weekly_constraints(search_dir: Path, codes: Optional[List[str]] = None) -> Tuple[pd.DataFrame, Dict[str, float]]:
     """
     Liest weekly Generation-Bounds aus den norwegischen PEMMDB-Hydro-Dateien,
     summiert sie über alle Bietzonen und gibt sie als DataFrame zurück.
     """
-    files = _find_no_hydro_files(project_root, codes=codes)
+    files = _find_no_hydro_files(search_dir, codes=codes)
 
     if not files:
         logger.warning("Keine norwegischen Hydro-Input-Dateien gefunden. Weekly Constraints werden übersprungen.")
@@ -248,9 +252,9 @@ def load_no_hydro_weekly_constraints(project_root: Path, codes: Optional[List[st
     return weekly_df, reference_caps
 
 
-def load_no_hydro_reservoir_capacity(project_root: Path, codes: Optional[List[str]] = None) -> Tuple[float, Dict[str, float]]:
+def load_no_hydro_reservoir_capacity(search_dir: Path, codes: Optional[List[str]] = None) -> Tuple[float, Dict[str, float]]:
     """Liest die aufsummierte Speicherenergie-Kapazität aus den norwegischen Dateien."""
-    files = _find_no_hydro_files(project_root, codes=codes)
+    files = _find_no_hydro_files(search_dir, codes=codes)
     reservoir_caps: Dict[str, float] = {}
     total_gwh = 0.0
 
@@ -423,7 +427,7 @@ def write_weekly_check(
 
 
 def load_reservoir_level_constraints(
-    project_root: Path,
+    search_dir: Path,
     codes: Optional[List[str]] = None,
     use_technical_bounds: bool = False,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
@@ -442,7 +446,7 @@ def load_reservoir_level_constraints(
     min_label = "Minimum Reservoir level, technical" if use_technical_bounds else "Minimum Reservoir level, historical"
     max_label = "Maximum Reservoir level, technical" if use_technical_bounds else "Maximum Reservoir level, historical"
 
-    files = _find_no_hydro_files(project_root, codes=codes)
+    files = _find_no_hydro_files(search_dir, codes=codes)
     if not files:
         logger.warning("Keine NO-Hydro-Dateien für Reservoir-Level-Constraints gefunden.")
         return pd.DataFrame(columns=["week", "min_level_ratio", "max_level_ratio", "min_level_mwh", "max_level_mwh"]), {}
@@ -691,8 +695,8 @@ def write_reservoir_level_check(
 
 def build_no_hydro_extra_functionality(
     n: pypsa.Network,
-    project_root: Path,
     level: str = "flow",
+    search_dir: Path = config.ACCUMULATED_DIR,
 ) -> Tuple[callable, dict]:
     """
     Bereitet die NO-Hydro-Fix-Constraints für ein Netz vor und gibt eine
@@ -711,8 +715,8 @@ def build_no_hydro_extra_functionality(
         storage_name = zone_config["storage_name"]
         codes = zone_config["codes"]
 
-        weekly_df, reference_caps = load_no_hydro_weekly_constraints(project_root, codes=codes)
-        reservoir_capacity_gwh, _ = load_no_hydro_reservoir_capacity(project_root, codes=codes)
+        weekly_df, reference_caps = load_no_hydro_weekly_constraints(search_dir, codes=codes)
+        reservoir_capacity_gwh, _ = load_no_hydro_reservoir_capacity(search_dir, codes=codes)
 
         if reservoir_capacity_gwh > 0:
             adjust_storage_capacity(n, reservoir_capacity_gwh, storage_name=storage_name)
@@ -730,7 +734,10 @@ def build_no_hydro_extra_functionality(
             logger.info("Wöchentliche %s-Flow-Constraints vorbereitet: %d Wochen", zone_name, len(weekly_df))
 
         if level == "flow+level":
-            level_df, _ = load_reservoir_level_constraints(project_root, codes=codes)
+            level_df, _ = load_reservoir_level_constraints(
+                search_dir, codes=codes,
+                use_technical_bounds=(config.NO_HYDRO_RESERVOIR_BOUNDS == "technical"),
+            )
             if not level_df.empty:
                 zone_level_data[zone_name] = level_df
                 logger.info("Reservoir-Level-Constraints vorbereitet für %s: %d Wochen", zone_name, len(level_df))

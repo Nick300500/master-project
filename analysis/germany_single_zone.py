@@ -1,13 +1,34 @@
 """
-PyPSA Deutschland-Simulation mit Gurobi
-Echte ERAA-Zeitreihen für Last, Wind, Solar
+germany_single_zone.py
+======================
+Früher, eigenständiger Prototyp: Deutschland als einzelne Zone (ohne
+Nachbarländer und Leitungen) mit echten ERAA-Zeitreihen, gelöst mit Gurobi.
+Diente als Plausibilitätscheck, bevor das Mehrzonenmodell stand.
+
+ACHTUNG: Nutzt NICHT das Hauptmodell (pipeline/model) und NICHT die Parameter
+aus config.py, sondern eigene, hier fest eingetragene Werte (Brennstoffpreise,
+Kapazitäten, Biomasse 60 €/MWh, DSR als negative Kosten, ...). Nur die Pfade
+kommen aus config.py. Ergebnisse sind daher nicht direkt mit
+main/run_simulation.py vergleichbar.
+
+Aufruf (aus dem Projekt-Root):
+    python analysis/germany_single_zone.py
+Ausgabe: 04_results/lmp_DE_<Zieljahr>.csv, 04_results/dispatch_DE_<Zieljahr>.csv
 """
 
-import pypsa
-import pandas as pd
-import numpy as np
 import sys
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pypsa
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import config
+
+# Windows-Konsolen (cp1252) können z.B. '─' nicht darstellen: ersetzen statt abbrechen
+sys.stdout.reconfigure(errors="replace")
 
 # ─────────────────────────────────────────────
 # KONFIGURATION
@@ -16,68 +37,69 @@ CLIMATE_YEAR = "2012"       # Wetterjahr (Spalte in den CSV-Dateien)
 SOLVER       = "gurobi"
 TARGET_ZONE  = "DE"         # Aggregierte Zone nach deiner Akkumulation
 
-DATA_DIR = Path("01_data/04b_accumulated_data_per_node")
+DATA_DIR = config.ACCUMULATED_DIR
+_TY = config.TARGET_YEAR
 
 # Pfade zu deinen akkumulierten Dateien
-PATH_LOAD        = DATA_DIR / "Demand" / "Demand Time Series" / "Demand_TimeSeries_2030_NationalTrends_without_bat" / "DE_accumulated.csv"
-PATH_WIND_ON     = DATA_DIR / "Climate Data/Wind Onshore" / "PECD_Wind_Onshore_2030_edition 2022.1" / "DE_accumulated.csv"
-PATH_WIND_OFF    = DATA_DIR / "Climate Data/Wind Offshore" / "PECD_Wind_Offshore_2030_edition 2022.1" / "DE_accumulated.csv"
-PATH_SOLAR_PV    = DATA_DIR / "Climate Data/Solar"   / "PECD_LFSolarPV_2030_edition 2022.1"   / "DE_accumulated.csv"
+PATH_LOAD        = DATA_DIR / "Demand" / "Demand Time Series" / f"Demand_TimeSeries_{_TY}_NationalTrends_without_bat" / "DE_accumulated.csv"
+PATH_WIND_ON     = DATA_DIR / "Climate Data/Wind onshore" / f"PECD_Wind_Onshore_{_TY}_edition 2022.1" / "DE_accumulated.csv"
+PATH_WIND_OFF    = DATA_DIR / "Climate Data/Wind offshore" / f"PECD_Wind_Offshore_{_TY}_edition 2022.1" / "DE_accumulated.csv"
+PATH_SOLAR_PV    = DATA_DIR / "Climate Data/Solar"   / f"PECD_LFSolarPV_{_TY}_edition 2022.1"   / "DE_accumulated.csv"
 PATH_ROR         = DATA_DIR / "Climate Data/Hydro Inflows"     / "Run of River"       / "DE_accumulated.csv"
 PATH_PONDAGE     = DATA_DIR / "Climate Data/Hydro Inflows"     / "Pondage"            / "DE_accumulated.csv"
 PATH_RESERVOIR   = DATA_DIR / "Climate Data/Hydro Inflows"     / "Reservoir"          / "DE_accumulated.csv"
 PATH_PS_OPEN     = DATA_DIR / "Climate Data/Hydro Inflows"     / "Pump storage - Open Loop"   / "DE_accumulated.csv"
-PATH_PS_CLOSED   = DATA_DIR / "Climate Data/Hydro Inflows"     / "Pump storage - Closed Loop" / "DE_accumulated.csv"
+PATH_PS_CLOSED   = DATA_DIR / "Climate Data/Hydro Inflows"     / "Pump Storage - Closed Loop" / "DE_accumulated.csv"
 
 # Welche DE-Zonen gehen in die Offshore-Akkumulation ein und mit welchem Gewicht?
 summary = pd.read_csv(
-    DATA_DIR / "Climate Data/Wind Offshore/PECD_Wind_Offshore_2030_edition 2022.1/01_group_summary.csv"
+    DATA_DIR / f"Climate Data/Wind offshore/PECD_Wind_Offshore_{_TY}_edition 2022.1/01_group_summary.csv"
 )
 print(summary[summary["group"] == "DE"])
 
 # ─────────────────────────────────────────────
 # HILFSFUNKTION: ERAA-Zeitreihe einlesen
 # ─────────────────────────────────────────────
-def read_eraa_timeseries(path: Path, climate_year: str, 
+def read_eraa_timeseries(path: Path, climate_year: str,
                           skiprows: int = 9) -> pd.Series:
     """
     Liest eine ERAA-Zeitreihen-CSV ein und gibt eine stündliche
     pd.Series für das gewählte Klimajahr zurück (8760 Werte).
-    
+
     - skiprows: Anzahl Metadaten-Zeilen (Load=9, vRES=10 – anpassen!)
     - Klimajahr: als String, z.B. "2012" oder "2012.0"
     """
     df = pd.read_csv(path, skiprows=skiprows, header=0)
-    
+
     # Erste zwei Spalten: Date + Hour
-    df = df.rename(columns={df.columns[0]: "Date", 
+    df = df.rename(columns={df.columns[0]: "Date",
                              df.columns[1]: "Hour"})
-    
+
     # Klimajahr-Spalte finden (manchmal "2012", manchmal "2012.0")
-    matching_cols = [c for c in df.columns 
+    matching_cols = [c for c in df.columns
                      if str(c).startswith(str(climate_year))]
     if not matching_cols:
         raise ValueError(f"Klimajahr {climate_year} nicht gefunden in {path.name}. "
                          f"Verfügbare Spalten: {list(df.columns[2:7])}...")
     col = matching_cols[0]
-    
+
     # Nur numerische Zeilen behalten (Datum nicht leer, Stunde numerisch)
     df = df.dropna(subset=["Hour"])
     df = df[pd.to_numeric(df["Hour"], errors="coerce").notna()]
-    
+
     # Zeitindex aufbauen: 8760 stündliche Timestamps für 2030
     # (Klimajahr bestimmt das Wetterprofil, Simulationsjahr bleibt 2030)
     timestamps = pd.date_range("2030-01-01", periods=len(df), freq="h")
-    
+
     series = pd.Series(
         pd.to_numeric(df[col].values, errors="coerce"),
         index=timestamps,
         name=path.stem
     )
-    
+
     # Fehlende Werte interpolieren (Lücken durch Metadaten-Reste)
     series = series.interpolate()
-    
+
     # Auf 8760 Stunden beschränken (Schaltjahre haben 8784h)
     return series.iloc[:8760]
 
@@ -87,17 +109,17 @@ def read_hydro_inflow(path: Path, climate_year: str, p_nom_col: int = 2,
 
     raw = pd.read_csv(path, header=None)
     p_nom = abs(float(raw.iloc[5, p_nom_col]))
-    
+
     header = raw.iloc[header_row, climate_col_start:].values
     data   = raw.iloc[data_start_row:, climate_col_start:].copy()
     data.columns = header
     data = data[pd.to_numeric(data.iloc[:, 0], errors="coerce").notna()]
-    
+
     matching_cols = [c for c in data.columns if str(c).startswith(str(climate_year))]
     if not matching_cols:
         raise ValueError(f"Klimajahr {climate_year} nicht in {path.name} gefunden.")
     col = matching_cols[0]
-    
+
     target_data = data[col].iloc[:, 0] if isinstance(data[col], pd.DataFrame) else data[col]
     values = pd.to_numeric(target_data, errors="coerce").fillna(0).values
 
@@ -117,14 +139,13 @@ def read_hydro_inflow(path: Path, climate_year: str, p_nom_col: int = 2,
         hourly_mw / p_nom if p_nom > 0 else hourly_mw,
         index=pd.date_range("2030-01-01", periods=8760, freq="h")
     ).clip(0, 1)
-    
+
     return p_nom, cf
 
 
 # ── Aufruf pro Technologie ───────────────────
 ror_pnom,      ror_cf      = read_hydro_inflow(PATH_ROR,           CLIMATE_YEAR)
 pondage_pnom,  pondage_cf  = read_hydro_inflow(PATH_PONDAGE,       CLIMATE_YEAR)
-
 
 
 # ─────────────────────────────────────────────
@@ -174,7 +195,7 @@ co2        = 100.0  # €/t
 co2_gas    = 0.202  # t/MWh_th
 mc_gas     = gas_price / eta_ccgt + co2 * co2_gas / eta_ccgt
 
-coal_price = 28.0   # €/MWh_th  
+coal_price = 28.0   # €/MWh_th
 eta_coal   = 0.38
 co2_coal   = 0.341
 mc_coal    = coal_price / eta_coal + co2 * co2_coal / eta_coal
@@ -217,7 +238,7 @@ n.add("Generator", "Pondage_DE",
 
 # ── Demand Side Response inkludieren ──
 # DSR-Daten laden
-dsr = pd.read_csv("01_data/04b_accumulated_data_per_node/ERAA 2022 PEMMDB National Estimates/Explicit DSR.csv")
+dsr = pd.read_csv(DATA_DIR / config.NATIONAL_ESTIMATES_DIRNAME / "Explicit DSR.csv")
 dsr_de = dsr[dsr["Bidding Zone"] == "DE"].iloc[0]
 
 # Alle 8 Preisbänder durchgehen
@@ -240,8 +261,8 @@ for band in range(1, 9):
               marginal_cost=-price,   # negativ: DSR reduziert Last → senkt Systemkosten
               carrier="dsr",
               p_max_pu=p_max_pu)
-    
-    
+
+
 # ── Mismatch Generator (verhindert Infeasibility) ──
 # Dieser Generator springt ein, wenn die Last sonst nicht gedeckt werden kann.
 # Die Grenzkosten von 10.000 €/MWh markieren den Preis für "Value of Lost Load".
@@ -374,8 +395,9 @@ for gen in n.generators.index:
     print(f"  {gen:20s}: {gwh:8.1f} GWh")
 
 # Speichern
-lmp.to_csv("04_results/lmp_DE_2030.csv", header=["price_EUR_MWh"])
-n.generators_t.p.to_csv("04_results/dispatch_DE_2030.csv")
-print("\nErgebnisse gespeichert in 04_results/")
+config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+lmp.to_csv(config.RESULTS_DIR / f"lmp_DE_{_TY}.csv", header=["price_EUR_MWh"])
+n.generators_t.p.to_csv(config.RESULTS_DIR / f"dispatch_DE_{_TY}.csv")
+print(f"\nErgebnisse gespeichert in {config.RESULTS_DIR}")
 
 n.consistency_check()

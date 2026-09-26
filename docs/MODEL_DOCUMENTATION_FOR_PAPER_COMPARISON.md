@@ -21,28 +21,31 @@ bzw. möglichst ähnlichen Input-Daten.
 
 ```
 ERAA-2022-Rohdaten (Excel, ENTSO-E)
-  → 01_excel_to_csv.py            (jedes Excel-Sheet → eigene CSV)
-  → 01b_restructure_hydro_inflows.py  (Hydro-Inflow-Dateien nach Technologie sortiert)
-  → 02b_filter_csvs.py            (nur Daten fürs Zieljahr behalten, Nutzer gibt Jahr interaktiv ein)
-  → 03_climate_accumulate_data_per_node.py   (Wind/Solar/Hydro/CSP je Gebotszonen-Gruppe akkumulieren)
-  → 03_demand_accumulate_data_per_node.py    (Demand je Gebotszonen-Gruppe akkumulieren)
-  → 03_b_add_years_to_hydro.py    (Platzhalter-Spaltenköpfe der Hydro-Dateien durch echte Klimajahre 1982–2017 ersetzen)
-  → 04_accumulate_interconnections.py  (NTC-Verbindungen je Zonen-Gruppenpaar akkumulieren, interne Verbindungen rausfiltern)
-  → 05_transpond TY{year}_csv.py  (PEMMDB-"National Estimates"-Tabelle transponieren)
-  → 06_filter_and_accu_PEMMCD_National_Estimates.py  (PEMMDB-Kapazitätstabellen nach Zieljahr filtern, nach Gebotszonen-Gruppe summieren)
+  main/prepare_data.py führt pipeline/data_preparation/ in dieser Reihenfolge aus:
+  → excel_to_csv.py                  (jedes Excel-Sheet → eigene CSV)
+  → sort_hydro_inflows.py            (Hydro-Inflow-Dateien nach Technologie sortiert)
+  → filter_target_year.py            (nur Daten fürs Zieljahr config.TARGET_YEAR behalten)
+  → transpose_capacity_table.py      (PEMMDB-Kapazitätstabelle "TY <Jahr>.csv" transponieren)
+  → aggregate_climate_data.py        (Wind/Solar/Hydro/CSP je Gebotszonen-Gruppe akkumulieren)
+  → aggregate_demand_data.py         (Demand je Gebotszonen-Gruppe akkumulieren)
+  → label_hydro_climate_years.py     (Platzhalter-Spaltenköpfe der Hydro-Dateien durch echte Klimajahre 1982–2017 ersetzen)
+  → aggregate_interconnections.py    (NTC-Verbindungen je Zonen-Gruppenpaar akkumulieren, interne Verbindungen rausfiltern)
+  → aggregate_national_estimates.py  (PEMMDB-Kapazitätstabellen nach Zieljahr filtern, nach Gebotszonen-Gruppe summieren)
+  → copy_no_hydro_files.py           (norwegische PEMMDB-Hydro-Excel für den NO-Hydro-Fix nach 04b kopieren)
   → 01_data/04b_accumulated_data_per_node/   (EINHEITLICHES Zwischenformat: eine CSV pro Zone/Gruppe und Kategorie)
-  → gather_global_params.py / load_zone_capacities.py / load_timeseries.py   (Zwischenformat → Python-Dicts/Series)
+  main/run_simulation.py nutzt pipeline/model/:
+  → global_params.py / zone_capacities.py / timeseries.py   (Zwischenformat → Python-Dicts/Series)
   → build_network.py              (PyPSA-Netz aufbauen: Busse, Generatoren, Speicher, DSR, Last)
-  → add_interconnections.py ODER paper_interconnections.py   (NTC-Links einfügen: ERAA-Werte oder Paper-eigene Werte)
-  → add_max_limits.py + no_hydro_fix.py (optional)  (zusätzliche Nebenbedingungen)
+  → eraa_interconnections.py ODER paper_interconnections.py   (NTC-Links einfügen: ERAA-Werte oder Paper-eigene Werte)
+  → max_limits.py + no_hydro_fix.py (optional)  (zusätzliche Nebenbedingungen)
   → n.optimize() (Gurobi, lineares Programm)
-  → Ergebnis-CSVs in 04_results/
+  → results.py: Ergebnis-CSVs in 04_results/
 ```
 
-Wichtig für die Bewertung: Alle Schritte ab `gather_global_params.py`
+Wichtig für die Bewertung: Alle Schritte ab `global_params.py`
 arbeiten NICHT mehr mit ENTSO-E-Rohformaten, sondern mit einem selbst
 definierten Zwischenformat (eine CSV pro Zone/Kategorie mit fester
-Zeilen-/Spaltenstruktur). Die Schritte 01–06 sind reine Formatübersetzung,
+Zeilen-/Spaltenstruktur). Die Schritte in `pipeline/data_preparation/` sind reine Formatübersetzung,
 kein Teil des eigentlichen ökonomischen Modells.
 
 ---
@@ -54,17 +57,16 @@ kein Teil des eigentlichen ökonomischen Modells.
   Hydro-Zuflüsse für Wetterjahre 1982–2017) und PEMMDB (Pan-European Market
   Modelling Database, installierte Kapazitäten/technische Parameter je
   Gebotszone und Zieljahr).
-- **Zieljahr (Kapazitäten):** fest auf **2030** verdrahtet
-  (`06_filter_and_accu_PEMMCD_National_Estimates.py`, Zeile
-  `filter_by_year(df, 2030)` — nicht parametrisierbar ohne Codeänderung).
-  Die einzige verwendete PEMMDB-Kapazitätsdatei heißt entsprechend
-  konsequent `TY 2030.csv`.
+- **Zieljahr (Kapazitäten):** **2030**, eingestellt über
+  `config.TARGET_YEAR`. Wirkt auf Datenaufbereitung (Filterung, Dateinamen
+  wie `TY 2030.csv`) und Modell (Dateipfade, Zeitachse). Getestet ist nur
+  2030; die festen Paper-Werte (CO2-Preis etc.) gelten ebenfalls für 2030.
 - **Demand-Szenario:** "National Trends", explizit ohne Batterie-Zusatzlast
   im Standardpfad (`Demand_TimeSeries_2030_NationalTrends_without_bat`).
-  Es gibt zusätzliche Zeitreihen für Batterien/E-Autos/Wärmepumpen
-  (`load_bat`, `load_ev`, `load_hp`), die geladen, aber standardmäßig NICHT
-  zur Last addiert werden (`include_detailed_demand=False` als Default in
-  `load_zone_timeseries()`). Ein früherer Commit hatte das aktiviert,
+  ERAA liefert zusätzliche Zeitreihen für Batterien/E-Autos/Wärmepumpen;
+  sie werden nicht zur Last addiert (die frühere, ungenutzte Option dafür
+  wurde entfernt, die Daten liegen in 04b auch nicht vor). Ein früherer
+  Commit hatte das aktiviert,
   wurde aber wieder zurückgenommen ("wahrscheinlich falsch") — bis heute
   nicht abschließend geklärt, ob die aggregierte Last mit oder ohne diese
   Zusatzlasten dem Paper entsprechen sollte.
@@ -92,7 +94,7 @@ Interconnections, PEMMDB-Kapazitäten, Max-Limits) — intern also
 widerspruchsfrei. Ob sie mit der Länderzuordnung des Papers übereinstimmt
 (Paper nennt nur "Baltic"/"Adriatic"/"Other Europe" ohne explizite
 Länderliste in den ausgewerteten Textstellen), ist die zentrale offene
-Frage für den Abgleich (siehe `OPEN_QUESTIONS_AUTHORS.md`, Punkt A.2).
+Frage für den Abgleich.
 
 **Aggregationsmethode innerhalb einer Gruppen-Zone** (wichtig, oft
 übersehene Design-Entscheidung):
@@ -107,8 +109,7 @@ Frage für den Abgleich (siehe `OPEN_QUESTIONS_AUTHORS.md`, Punkt A.2).
   Verbindungen zwischen unterschiedlichen Gruppen werden übernommen).
 - Landescode-Duplikate auf Rohdaten-Ebene (identisches Zonenpaar taucht
   zweimal in den Rohdaten auf) werden erkannt und die zweite Instanz
-  verworfen (behebt den in `OPEN_QUESTIONS_AUTHORS.md` erwähnten
-  FI–Baltic-Doppelverbindungs-Bug).
+  verworfen (behebt einen früheren FI–Baltic-Doppelverbindungs-Bug).
 
 ---
 
@@ -121,24 +122,24 @@ Frage für den Abgleich (siehe `OPEN_QUESTIONS_AUTHORS.md`, Punkt A.2).
   (`climate_year`, z. B. `"2012"`). Steuert, welche PECD-Spalte für
   Wind/Solar/Hydro sowie ggf. für Demand herangezogen wird.
 - **Verfügbarer Wertebereich:** PECD/ERAA liefert 1982–2017 (36 Jahre;
-  `03_b_add_years_to_hydro.py` erzeugt exakt diese Spannbreite). Der
-  ursprüngliche Batch-Treiber (`run_batch_simulation.py`, vor der
-  Konsolidierung) zog zufällige Jahre aus **1982–2015** (`YEAR_MIN=1982,
-  YEAR_MAX=2015`) — deckt **2016 und 2017 nicht ab**, obwohl die Daten
-  verfügbar wären. Nicht abschließend geklärt, ob das Absicht war.
+  `label_hydro_climate_years.py` erzeugt exakt diese Spannbreite).
+  `main/run_simulation.py` zieht ohne `--years` zufällige Jahre aus
+  **1982–2015** (`config.RANDOM_YEARS_RANGE`, übernommen aus dem
+  ursprünglichen Batch-Treiber) — deckt **2016 und 2017 nicht ab**, obwohl
+  die Daten verfügbar wären. Nicht abschließend geklärt, ob das Absicht war.
   Zum Vergleich: Das Paper spricht in der Einleitung von "1982–2016", in
   der Methods-Sektion aber explizit von "1987–2016" als Ziehungsbereich —
-  **beide Angaben weichen vom im Code verwendeten Bereich ab** (siehe
-  `OPEN_QUESTIONS_AUTHORS.md`, Punkt A.1, bislang ungeklärt).
+  **beide Angaben weichen vom im Code verwendeten Bereich ab** (bislang
+  ungeklärt).
 - **Kein Monte-Carlo über ökonomische Parameter:** Das Paper zieht laut
   Methods für jede Wiederholung sowohl ein zufälliges Wetterjahr als auch
   (basierend auf einer historischen Kovarianzmatrix 1990–2021) zufällige
   Demand- und Brennstoffpreis-Realisationen. **Dieses Repository variiert
   ausschließlich das Klimajahr** — Brennstoffpreise, Demand-Niveau,
   CO2-Preis etc. sind für alle Läufe identisch (fixe Werte aus
-  `Additional Data`, s. u.). Ein Parameter für Gaspreis-Override existiert
-  im Code (`gas_price_eur_mwh_th` in `build_network()`), wird aber vom
-  aktuellen CLI (`run_batch_simulation.py`) nicht genutzt. **Das ist die
+  `Additional Data`, s. u.). Brennstoffpreise lassen sich über
+  `config.FUEL_PRICE_OVERRIDES_EUR_PER_GJ` fest setzen (z. B. für eine
+  Gaspreis-Sensitivität), aber nicht pro Lauf zufällig ziehen. **Das ist die
   vermutlich größte methodische Lücke gegenüber dem Paper** — die
   Simulation bildet nur die Wetter-bedingte Varianz ab, nicht die vom
   Paper explizit adressierte Kombination aus Wetter- UND
@@ -162,7 +163,7 @@ Kapazitäten (`p_nom`, MW) kommen ausschließlich aus `TY 2030.csv`
 | `Coal_{zone}` | "Hard Coal" | analog | aus CSV falls vorhanden (Mapping aktiv) |
 | `Nuclear_{zone}` | "Nuclear" | analog | aus CSV falls vorhanden (Mapping aktiv) |
 | `Oil_{zone}` | "Oil" | über `light_oil`/`oil` | aus CSV falls vorhanden (Mapping aktiv) |
-| `Biomass_{zone}` | "Biofuel" + "Others renewable" (aggregiert) | — | **fest 30 €/MWh, keine CSV-Anbindung, reine Annahme** (siehe `OPEN_QUESTIONS_AUTHORS.md`, Punkt A.7) |
+| `Biomass_{zone}` | "Biofuel" + "Others renewable" (aggregiert) | — | **fest 30 €/MWh, keine CSV-Anbindung, reine Annahme** |
 | `WindOn_{zone}`, `WindOff_{zone}`, `Solar_{zone}` | "Wind Onshore"/"Wind Offshore"/"Solar (Photovoltaic)" | — | 0 (kein Brennstoff) |
 | `RoR_{zone}`, `Pondage_{zone}` | "Hydro - Run of River/Pondage (Turbine)" | — | 0 |
 | `LoadShedding_{zone}` | künstlich, `p_nom=1e6` MW | — | = VOLL, fest 3000 €/MWh |
@@ -175,22 +176,16 @@ non-renewable" werden zu EINEM Generator addiert, ebenso "Biofuel" und
 Anpassung an die (vermutete) Kategorisierung des Papers, keine
 ERAA-Standardkategorie.
 
-**CO2-Preis:** Die Lade-Funktion `load_co2_price()` liest technisch aus
-`CO2 prices/Sheet1.csv`, ABER der komplette CSV-Auswertungscode ist
-auskommentiert — es wird **immer** der Fallback-Wert **100 €/t** verwendet,
-unabhängig vom tatsächlichen CSV-Inhalt. Das ist keine Fallback-Logik für
-fehlende Daten, sondern ein bewusst (mit Kommentar "changed due to paper
-confirmation") fest verdrahteter Wert.
+**CO2-Preis:** fest **100 €/t** (`config.CO2_PRICE_EUR_PER_T`). Die
+ERAA-Datei `CO2 prices/Sheet1.csv` wird nicht gelesen. Das ist keine
+Fallback-Logik für fehlende Daten, sondern ein bewusst auf den im Paper
+bestätigten Wert gesetzter Parameter.
 
-**Market Price Cap:** Wird geladen (`load_market_price_cap()` gibt fix
-3000 €/MWh zurück, mit explizitem Hinweis im Log, dass der ERAA-Wert
-8000 €/MWh ignoriert wird) und im Parameter-Dict gespeichert — **wird aber
-nirgends im Modell tatsächlich als Constraint verwendet**. Der einzige
-faktische Preisdeckel im Modell ergibt sich indirekt aus dem
-Load-Shedding-Generator mit `marginal_cost = VOLL = 3000`. Der separate
-"Market Price Cap"-Parameter ist aktuell totes Datum ohne Wirkung.
+**Market Price Cap:** Die ERAA-Preisobergrenze (8000 €/MWh) wird nicht
+verwendet. Der einzige faktische Preisdeckel im Modell ergibt sich aus dem
+Load-Shedding-Generator mit `marginal_cost = VOLL = 3000`.
 
-**VOLL (Value of Lost Load):** fest 3000 €/MWh, mit explizitem Verweis
+**VOLL (Value of Lost Load):** fest 3000 €/MWh (`config.VOLL_EUR_PER_MWH`),
 "paper-konform" (ERAA würde 8000 €/MWh vorsehen).
 
 ---
@@ -201,7 +196,7 @@ Load-Shedding-Generator mit `marginal_cost = VOLL = 3000`. Der separate
   Spalte in der akkumulierten CSV.
 - Bei Gruppen-Zonen: kapazitätsgewichteter Mittelwert (s. Abschnitt 3).
 - Werte werden vor Verwendung auf `[0, 1]` geclippt (Interpolation +
-  Clipping in `load_timeseries.py` bzw. `build_network.py`).
+  Clipping in `timeseries.py` bzw. `build_network.py`).
 - Keine Abregelung/Curtailment-Kosten, kein Netzengpass unterhalb der
   Zonenebene (kupferplatten-Annahme pro Zone).
 - Solar Thermal (`solar_thermal`) wird zwar aus der TY2030-Tabelle
@@ -225,7 +220,7 @@ Fünf ERAA-Hydro-Kategorien, alle mit `efficiency_dispatch = 0.87`
 
 **Wichtige Vereinfachung bei den Inflow-Zeitreihen:** ERAA liefert
 Hydro-Zuflüsse nur als wöchentliche (52–53 Werte) oder tägliche (365 Werte)
-Summen. Der Code (`_read_hydro_inflow()` in `load_timeseries.py`) verteilt
+Summen. Der Code (`_read_hydro_inflow()` in `timeseries.py`) verteilt
 diese Summe **gleichmäßig** auf alle Stunden des jeweiligen Zeitfensters
 (konstanter MW-Wert für 168h bzw. 24h). Es gibt **keine
 Innerhalb-Woche/Innerhalb-Tag-Dynamik** — ein Sonntagnachmittag bekommt
@@ -235,9 +230,8 @@ möglicherweise vom Paper/GenX abweichende Vereinfachung.
 **Speicherkapazität (`max_hours`):** berechnet als
 `MWh-Energiespeicherkapazität (aus TY2030) ÷ MW-Turbinenkapazität`.
 Fallback `8.0h`, falls einer der beiden Werte fehlt oder 0 ist. Diese
-Fallback-Annahme ist willkürlich und nicht paper-referenziert — betrifft
-laut `OPEN_QUESTIONS_AUTHORS.md` Punkt A.8 direkt eine der offenen
-Autoren-Fragen.
+Fallback-Annahme ist willkürlich und nicht paper-referenziert (offene
+Frage an die Autoren).
 
 **Norwegen-Sonderfall:** ERAA klassifiziert die gesamte norwegische
 Speicherwasserkraft unter "Pump Storage Open Loop" (kein separater
@@ -280,8 +274,7 @@ Speicher-MWh).
   modelliert wie eine zusätzliche, günstige Erzeugungsquelle, die sich
   aktiviert, sobald der Marktpreis ihren Aktivierungspreis erreicht/
   übersteigt (ökonomischer Dispatch, kein separates Gebotsverfahren) —
-  entspricht dem im `OPEN_QUESTIONS_AUTHORS.md` erwähnten Fix "Load →
-  Generator with economic dispatch".
+  entspricht dem früheren Fix "Load → Generator with economic dispatch".
 - **Explizit weggelassene Einschränkung** (im Code kommentiert): kein
   Tagesstunden-Limit für DSR-Aktivierung. In der Realität (und vermutlich
   auch im Paper/GenX) kann DSR meist nur eine begrenzte Anzahl Stunden pro
@@ -300,7 +293,7 @@ Speicher-MWh).
 
 Zwei alternative Implementierungen, per CLI wählbar:
 
-1. **ERAA-Standard** (`add_interconnections.py`, `--interconnections
+1. **ERAA-Standard** (`eraa_interconnections.py`, `--interconnections
    eraa`): Liest akkumulierte HVAC- und HVDC-Transferkapazitäten
    (`Transfer Capacities_ERAA2022_TY2030/{HVAC,HVDC}.csv`), bildet den
    **Jahresdurchschnitt** je Verbindungspaar (statische Kapazität für die
@@ -316,7 +309,7 @@ Zwei alternative Implementierungen, per CLI wählbar:
 **Übertragungseffizienz:** `efficiency=1.0` (verlustfrei) bei beiden
 Varianten — explizit als "paper-konform" kommentiert.
 
-**Country-Level-Max-Limits** (`add_max_limits.py`, optional
+**Country-Level-Max-Limits** (`max_limits.py`, optional
 zuschaltbar, Standard AN): zusätzliche Brutto-Import-/Export-Obergrenze
 pro Zone, aber **nur für die Zonen, für die ERAA diese Daten liefert**
 (`BG00, CH00, CY00, CZ00, HR00, MT00, NL00, RS00, SK00, UK00` laut
@@ -329,8 +322,7 @@ Paper-NTC-Werten war laut Commit-Historie ("Added optional choice...",
 später "changed to only be able to simulate Paper NTC values bc of
 mix-up beforehand") bereits Gegenstand von Unsicherheit im Projekt selbst
 — ob die SI-Tabellenwerte des Papers 1:1 den ERAA-Rohdaten entsprechen
-oder zusätzlich bearbeitet wurden, ist eine offene Autoren-Frage
-(`OPEN_QUESTIONS_AUTHORS.md`, Punkt A.3).
+oder zusätzlich bearbeitet wurden, ist eine offene Autoren-Frage.
 
 ---
 
@@ -362,7 +354,7 @@ oder zusätzlich bearbeitet wurden, ist eine offene Autoren-Frage
   verwendet).
 - **`n.consistency_check()`** wird seit 2026-09-02 nach dem Netzaufbau
   aufgerufen (fand zuvor einen Bug: Carrier "DSR" war nicht registriert —
-  inzwischen behoben, siehe `CLEANUP_PLAN.md`).
+  inzwischen behoben).
 
 ---
 
@@ -378,14 +370,11 @@ oder zusätzlich bearbeitet wurden, ist eine offene Autoren-Frage
   außer den (statischen, jahresdurchschnittlichen) NTC-Grenzen.
 - Solar Thermal wird geladen, aber nie ins Modell eingefügt.
 - DSR ohne Aktivierungsstunden-Limit (Überschätzung der Flexibilität).
-- `market_price_cap` wird berechnet, aber nirgends angewendet (totes
-  Datum).
-- Zieljahr für Kapazitäten ist hart auf 2030 verdrahtet
-  (`06_filter_and_accu_PEMMCD_National_Estimates.py`); der
-  `target_year`-Parameter in `build_network()` wirkt NUR auf die
-  Kostenberechnung (`gather_global_params.py`), nicht auf die
-  Kapazitätsdaten selbst — ein latenter Widerspruch, falls jemand
-  `target_year != 2030` übergibt, ohne das zu wissen.
+- Die ERAA-Marktpreisobergrenze (8.000 €/MWh) wird nicht angewendet; die
+  Preisspitzen begrenzt allein VOLL (3.000 €/MWh).
+- Zieljahr ist nur für 2030 getestet (`config.TARGET_YEAR`); ein anderes
+  Zieljahr verlangt eine neue Datenaufbereitung und passt die festen
+  Paper-Werte nicht an.
 - CO2-Preis, CCGT-Wirkungsgrad, CCGT-VOM und Lignite-Brennstoffpreis sind
   trotz vorhandener CSV-Lade-Infrastruktur **fest auf Paper-konforme
   Werte verdrahtet** (CSV-Inhalt wird an diesen Stellen ignoriert, nicht
@@ -395,7 +384,7 @@ oder zusätzlich bearbeitet wurden, ist eine offene Autoren-Frage
 
 ---
 
-## 13. Bekannte offene Fragen (siehe `OPEN_QUESTIONS_AUTHORS.md` für Details)
+## 13. Bekannte offene Fragen
 
 1. Exakter Klimajahr-Ziehungsbereich (Paper: 1982–2016 vs. 1987–2016;
    Code: 1982–2015 im alten Default).

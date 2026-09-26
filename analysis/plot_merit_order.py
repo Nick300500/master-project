@@ -1,28 +1,27 @@
 """
-plot_merit_order_DE.py
-======================
+plot_merit_order.py
+===================
 Merit-Order-Kurve für eine einzelne Stunde, wahlweise:
   a) Stilisierter Einzelstundenfall (Default, Grenzpreis ≈ 12,5 €/MWh)
   b) Echter Dispatch aus dispatch_generators.csv + capacities_generators.csv
 
 Verwendung:
     # Stilisierter Fall (12,5 €/MWh):
-    python 02_models/skripts/plot_merit_order_DE.py
+    python analysis/plot_merit_order.py
 
     # Echter Dispatch, Stunde 0:
-    python 02_models/skripts/plot_merit_order_DE.py \
+    python analysis/plot_merit_order.py \
         --dispatch  "04_results/.../dispatch_generators.csv" \
         --caps      "04_results/.../capacities_generators.csv" \
         --hour 0 --zone DE
 
-    python 02_models/skripts/plot_merit_order_DE.py --output merit_order_DE.png
+    python analysis/plot_merit_order.py --output merit_order_DE.png
 """
 
 import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import matplotlib.ticker as mticker
 import pandas as pd
 
@@ -376,7 +375,6 @@ def _draw_panel(ax, generators: list, demand_mw: float, title: str, y_cap: float
                 ha="right", va="top", fontsize=7.5, color="#E65100", fontweight="bold")
 
     if max_load_mw is not None:
-        capped = max_load_mw <= x_total * 1.02
         ax.axvline(min(max_load_mw, x_total * 1.015), color="#B71C1C", lw=1.6, ls="--",
                    zorder=4, label=f"Max load ({max_load_mw/1000:.0f} GW)")
         x_label = min(max_load_mw, x_total * 0.99)

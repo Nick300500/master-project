@@ -1,25 +1,29 @@
 """
-Zusatzskript zur Nachbearbeitung der Hydro-Daten.
-Ersetzt Platzhalter-Zahlen in der Header-Zeile durch korrekte Klimajahre (1982-2017).
+Schritt 7: Klimajahre in Hydro-Dateien eintragen
+================================================
+In den ERAA-Hydro-Inflow-Dateien stehen im Tabellenkopf statt der Klimajahre
+Platzhalter-Zahlen. Dieser Schritt ersetzt sie in allen Hydro-Dateien unter
+config.ACCUMULATED_DIR durch die Jahre 1982-2017, damit das Modell die Spalte
+eines Wetterjahrs findet. Mehrfaches Ausführen ist unschädlich.
 """
 
-from pathlib import Path
 import csv
-import re
 import logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import config
+
 logger = logging.getLogger(__name__)
 
-# Pfad zu den bereits akkumulierten Daten
-BASE_DIR = Path("01_data/04b_accumulated_data_per_node")
+BASE_DIR = config.ACCUMULATED_DIR
+FIRST_YEAR, LAST_YEAR = config.CLIMATE_YEARS_AVAILABLE
 
-def add_years_to_hydro():
+
+def main():
     # Jahre 1982 bis 2017 (insgesamt 36 Spalten pro Block)
-    years = [str(y) for y in range(1982, 2018)]
-    
+    years = [str(y) for y in range(FIRST_YEAR, LAST_YEAR + 1)]
+
     logger.info(f"Starte Jahr-Ergänzung für Hydro-Dateien in: {BASE_DIR}")
-    
+
     if not BASE_DIR.exists():
         logger.error("Basisverzeichnis nicht gefunden!")
         return
@@ -29,9 +33,9 @@ def add_years_to_hydro():
         # Nur Dateien in Ordnern verarbeiten, die "Hydro" enthalten
         if "Hydro" not in str(csv_path):
             continue
-            
+
         logger.info(f"Verarbeite: {csv_path.relative_to(BASE_DIR)}")
-        
+
         try:
             with csv_path.open("r", encoding="utf-8", errors="replace") as f:
                 reader = csv.reader(f)
@@ -46,13 +50,13 @@ def add_years_to_hydro():
         for row_idx in [12, 13]:
             if len(rows) <= row_idx:
                 continue
-            
+
             target_row = rows[row_idx]
             row_modified = False
             i = 17
             while i < len(target_row):
                 cell = target_row[i].strip()
-                
+
                 # Robuste Erkennung von Platzhaltern (z.B. "13874" oder "13874.0")
                 is_placeholder = False
                 try:
@@ -70,10 +74,10 @@ def add_years_to_hydro():
                         if col_idx < len(target_row):
                             target_row[col_idx] = year
                     row_modified = True
-                    i += 36 # Sprung zum nächsten Block (36 Jahre)
+                    i += len(years)  # Sprung zum nächsten Block
                 else:
                     i += 1
-            
+
             if row_modified:
                 rows[row_idx] = target_row
                 modified = True
@@ -90,4 +94,5 @@ def add_years_to_hydro():
     logger.info(f"Fertig. {processed_files} Dateien wurden mit Jahreszahlen aktualisiert.")
 
 if __name__ == "__main__":
-    add_years_to_hydro()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    main()

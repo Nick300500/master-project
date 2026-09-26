@@ -1,39 +1,48 @@
 """
-Skript-Grundgerüst für die Datenakkumulation pro Netz-Knoten.
+Schritt 6: Nachfrage je Modellzone aggregieren
+==============================================
+Summiert die Last-Zeitreihen aus config.FILTERED_DIR/Demand von ERAA-Zonen auf
+Modellzonen (config.ZONE_GROUPS, sonst Ländercode) und schreibt je Zone
+"<Zone>_accumulated.csv" nach config.ACCUMULATED_DIR.
 
-Dieses Skript soll Daten aus verarbeiteten CSV-Dateien einlesen,
-pro Knotengruppe zusammenfassen und als aggregierte Tabelle speichern.
-
+Kopiert außerdem "Additional Data" (Brennstoffpreise, Wirkungsgrade, ...) und
+"Transfer capacities" unverändert nach config.ACCUMULATED_DIR. Muss deshalb VOR
+Schritt 8 laufen, sonst überschreibt diese Rohkopie die aggregierten
+Leitungsdaten.
 """
 
-from pathlib import Path
+import csv
 import logging
 import re
-import csv
 import shutil
+from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import config
+
 logger = logging.getLogger(__name__)
 
+SOURCE_DIR = config.FILTERED_DIR
+OUTPUT_DIR = config.ACCUMULATED_DIR
 
-
-SOURCE_DIR = Path("01_data/03_filtered_data_for_prediction_year")
-OUTPUT_DIR = Path("01_data/04b_accumulated_data_per_node")
-
-copy_all_folders = [
+# Ordner, die unverändert nach OUTPUT_DIR kopiert werden
+COPY_ALL_FOLDERS = [
     "Additional Data/Annex 1 - Input data",
-    "Transfer capacities"
+    "Transfer capacities",
 ]
-#Kopiere die copy_all folders, abliegend in SOURCE_DIR in OUTPUT_DIR
-for folder in copy_all_folders:
-    source_folder = SOURCE_DIR / folder
-    dest_folder = OUTPUT_DIR / folder
-    if source_folder.exists():
-        dest_folder.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_folder, dest_folder, dirs_exist_ok=True)
-        logger.info(f"Kopiere Ordner: {folder}")
-    else:
-        logger.warning(f"Quellordner nicht gefunden: {source_folder}")
+
+
+def copy_unchanged_folders():
+    """Kopiert COPY_ALL_FOLDERS von SOURCE_DIR nach OUTPUT_DIR."""
+    for folder in COPY_ALL_FOLDERS:
+        source_folder = SOURCE_DIR / folder
+        dest_folder = OUTPUT_DIR / folder
+        if source_folder.exists():
+            dest_folder.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source_folder, dest_folder, dirs_exist_ok=True)
+            logger.info(f"Kopiere Ordner: {folder}")
+        else:
+            logger.warning(f"Quellordner nicht gefunden: {source_folder}")
+
 
 def remove_duplicate_files(root_dir: Path):
     """Entferne CSV-Duplikate, die ein '(' im Dateinamen enthalten."""
@@ -44,25 +53,14 @@ def remove_duplicate_files(root_dir: Path):
             removed += 1
     logger.info(f"Doppelte Dateien entfernt: {removed}")
 
-# Globale Gruppierungsregeln für alle Ordner.
-# Wert: Mapping von Zielgruppe zu Liste der zusammenzufassenden Gebotszonen.
-GROUP_RULES = {
-    # Bestimmte Gebietszonen zusammenfassen.
-    "adriatic": ["AL", "BA", "HR", "ME", "MK", "RS", "SI"],
-    "baltic": ["EE", "LV", "LT"],
-    "other eastern european": ["BG", "HU", "RO", "SK"],
-}
-
 # Ordner, die von der Akkumulation ausgeschlossen werden sollen.
 EXCLUDE_FOLDERS = [
     "Hydro Inflows",
     "Additional Data",
-    "ERAA 2022 PEMMDB National Estimates",
+    config.NATIONAL_ESTIMATES_DIRNAME,
     "Transfer capacities",
     "Climate Data"
 ]
-
-ZONE_PATTERN = re.compile(r"\b([A-Za-z]{2}\d{0,2})\b")
 
 
 def is_excluded_folder(relative_folder: Path) -> bool:
@@ -83,13 +81,11 @@ def resolve_group(zone: str, rules: dict[str, list[str]]) -> str:
 
     return zone
 
-###Bis hier hin: Alles klar und passt!
-
 ZONE_CODE_PATTERN = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2}\d{2})(?![A-Za-z0-9])")
 ZONE_SHORT_PATTERN = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2})(?![A-Za-z0-9])")
 
 
-def normalize_zone(candidate: str) -> str: 
+def normalize_zone(candidate: str) -> str:
     """Normalisiert die Gebotszone, um Inkonsistenzen zu vermeiden (z.B. "DE" vs "DE1")."""
     candidate = candidate.upper()
     if len(candidate) == 4 and candidate[:2].isalpha() and candidate[2:].isdigit():
@@ -108,31 +104,12 @@ def extract_zone_from_path(csv_path: Path) -> str:
     for part in csv_path.parts:
         for match in ZONE_SHORT_PATTERN.findall(part):
             normalized = normalize_zone(match)
-            if normalized in {z for zones in GROUP_RULES.values() for z in zones}:
+            if normalized in {z for zones in config.ZONE_GROUPS.values() for z in zones}:
                 return normalized
 
     stem = csv_path.stem
     fallback = stem.split()[0].split("_")[0].upper()
     return normalize_zone(fallback)
-
-
-def parse_value(value: str):
-    text = value.strip()
-    if text == "":
-        return ""
-    try:
-        return int(text)
-    except ValueError:
-        pass
-    try:
-        return float(text.replace(",", "."))
-    except ValueError:
-        return text
-
-
-def is_numeric_value(value) -> bool:
-    """Check if a parsed value is numeric (int or float)."""
-    return isinstance(value, (int, float))
 
 
 def format_value(value):
@@ -282,7 +259,7 @@ def accumulate_data_per_node(source_dir: Path, output_dir: Path):
         group_files: dict[str, list[Path]] = {}
         for csv_path in csv_paths:
             zone = extract_zone_from_path(csv_path)
-            group = resolve_group(zone, GROUP_RULES)
+            group = resolve_group(zone, config.ZONE_GROUPS)
             logger.info(f"  - {csv_path.name} -> zone={zone}, group={group}")
             group_files.setdefault(group, []).append(csv_path)
 
@@ -303,9 +280,11 @@ def accumulate_data_per_node(source_dir: Path, output_dir: Path):
 def main():
     output_dir = OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
+    copy_unchanged_folders()
     remove_duplicate_files(SOURCE_DIR)
     accumulate_data_per_node(SOURCE_DIR, output_dir)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     main()

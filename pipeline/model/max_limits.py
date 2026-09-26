@@ -1,6 +1,6 @@
 """
-add_max_limits.py
-==================
+max_limits.py
+=============
 Lädt länderweite Gross-Import/Export-NTC-Obergrenzen (ENTSO-E
 "Country Level Maximum NTC", Datei "Max limit.csv") und erzwingt sie als
 zusätzliche Nebenbedingung im PyPSA-Optimierungsmodell:
@@ -10,8 +10,9 @@ zusätzliche Nebenbedingung im PyPSA-Optimierungsmodell:
     Summe aller Import-Flüsse einer Zone (Links mit bus1 == Zone)
         <= Gross_Import_limit
 
-Diese Grenzen ergänzen die bilateralen NTC-Kapazitäten aus
-add_interconnections.py um eine Top-Level-Begrenzung pro Gebotszone.
+Diese Grenzen ergänzen die bilateralen NTC-Kapazitäten um eine
+Top-Level-Begrenzung pro Gebotszone (an/aus: config.ENFORCE_MAX_LIMITS bzw.
+--max-limits / --no-max-limits).
 
 WICHTIG - Datenlage:
 ERAA liefert dieses Limit NICHT für alle Gebotszonen, sondern nur für
@@ -29,7 +30,7 @@ gerichteten Brutto-Flüsse, die hier modelliert werden, wird NL bewusst
 NICHT constraint - eine Gleichsetzung wäre fachlich falsch.
 
 Verwendung:
-    from add_max_limits import max_limit_extra_functionality
+    from pipeline.model.max_limits import max_limit_extra_functionality
     n.optimize(
         solver_name="gurobi",
         extra_functionality=max_limit_extra_functionality(active_zones),
@@ -42,25 +43,16 @@ from pathlib import Path
 import pandas as pd
 import pypsa
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s - %(levelname)s - %(message)s")
+import config
+
 logger = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).parent.parent.parent
+# "Max limit.csv" wird von der Datenaufbereitung unverändert (nicht
+# aggregiert) kopiert; die Zonen-Gruppierung passiert deshalb hier.
 MAX_LIMIT_PATH = (
-    _PROJECT_ROOT
-    / "01_data/04b_accumulated_data_per_node/Transfer capacities"
-    / "Transfer Capacities_ERAA2022_TY2030/Max limit.csv"
+    config.ACCUMULATED_DIR / "Transfer capacities"
+    / f"Transfer Capacities_ERAA2022_TY{config.TARGET_YEAR}" / "Max limit.csv"
 )
-
-# Muss konsistent mit GROUP_RULES in 04_accumulate_interconnections.py
-# gehalten werden, da hier dieselbe Zonen-Gruppierung auf Rohdaten
-# (z.B. HR00, RS00) angewendet wird wie dort.
-GROUP_RULES = {
-    "adriatic": ["AL", "BA", "HR", "ME", "MK", "RS", "SI"],
-    "baltic": ["EE", "LV", "LT"],
-    "other eastern european": ["BG", "HU", "RO", "SK"],
-}
 
 
 def _normalize_zone(candidate: str) -> str:
@@ -74,7 +66,7 @@ def _normalize_zone(candidate: str) -> str:
 
 def _resolve_group(zone: str) -> str:
     normalized = _normalize_zone(str(zone).strip().upper())
-    for group_name, zones in GROUP_RULES.items():
+    for group_name, zones in config.ZONE_GROUPS.items():
         if normalized in zones:
             return group_name
     return normalized
