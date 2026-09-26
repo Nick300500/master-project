@@ -1,0 +1,51 @@
+﻿Linie;ERAA (akkumuliert und HVAC +HVDC);Paper;Mein Modell;Begründung
+ES-PT;3.850,0;3.850,0;3.850,0;Gleich
+ES-FR;5.151,8;5.485,0;5.151,8;Geringe Abw. (-6%), evtl. Richtungs-/Rundungseffekt im Paper
+BE-FR;3.550,0;3.980,0;3.550,0;Moderate Abw. (-11%), evtl. NECP-Projekt nicht in ERAA-NTC-Zeitreihe
+DE-FR;4.800,0;8.500,0;4.800,0;Große Abw. (-44%) - vermutlich NECP-Ausbauprojekt, in ERAA-TY2030-NTC noch nicht abgebildet
+BE-NL;3.400,0;3.400,0;3.400,0;Gleich
+FR-IT;3.010,2;3.178,0;3.010,2;Geringe Abw. (-5%), 
+BE-DE;1.000,0;1.000,0;1.000,0;Gleich
+CH-FR;2.349,5;2.550,0;2.349,4;Geringe Abw. (-8%), 
+DE-NL;5.000,0;5.000,0;5.000,0;Gleich
+CH-DE;3.801,8;3.750,0;3.801,8;Geringe Abw. (+1%), 
+DE-AT;7.500,0;7.500,0;7.500,0;Gleich
+CH-IT;2.749,6;2.910,0;2.749,6;Geringe Abw. (-6%)
+DE-PL;2.500,0;5.000,0;2.500,0;Große Abw. (exakt -50%) - Faktor 2 deutet auf NECP-Ausbauprojekt oder andere ERAA-Datenrevision hin
+DK-NL;659,7;700,0;659,7;Geringe Abw. (-6%),  
+IT-AT;569,8;6.008,0;569,8;"Massive Abw. (-90.5%) - vermutlich massives NECP-Ausbauprojekt oder Paper-Wert bezieht sich auf andere Quelle; Größenordnung verdächtig hoch für eine einzelne AC-Leitung"
+CZ-DE;2.850,0;3.550,0;2.850,0;Moderate Abw. (-20%), evtl. NECP-Projekt
+CH-AT;1.400,0;2.100,0;1.400,0;Große Abw. (-33%), evtl. NECP-Projekt
+DE-DK;4.234,0;4.493,0;4.234,0;Geringe Abw. (-6%),  
+DE-SE;1.315,0;1.315,0;1.315,0;Gleich
+BE-UK;1.000,0;1.000,0;1.000,0;Gleich
+DE-NO;1.400,0;1.400,0;1.400,0;Gleich
+CZ-AT;1.250,0;2.250,0;1.250,0;Große Abw. (-44%), evtl. NECP-Projekt
+PL-CZ;1.025,0;2.050,0;1.025,0;Große Abw. (exakt -50%), gleiches Faktor-2-Muster wie DE-PL - evtl. systematischer Versionsunterschied der ERAA-NTC-Matrix
+DE-UK;1.400,0;1.400,0;1.400,0;Gleich
+IT-adriatic;1.178,7;1.083,0;1.178,8;Geringe Abw. (+9%),  
+SE-PL;600,0;600,0;600,0;Gleich
+GR-IT;500,0;500,0;500,0;Gleich
+adriatic-AT;916,3;950,0;916,3;Geringe Abw. (-4%),  
+DK-SE;2.098,0;2.215,0;2.098,0;Geringe Abw. (-5%),  
+baltic-PL;700,0;700,0;700,0;Gleich
+AT-OE;800,0;800,0;800,0;Gleich
+DK-NO;1.538,1;1.632,0;1.538,1;Geringe Abw. (-6%),  
+OE-PL;857,0;1.734,0;857,0;Große Abw. (-50.6%), gleiches Faktor-2-Muster
+NO-SE;3.820,0;3.820,0;3.820,0;Gleich
+FI-SE;3.200,0;3.200,0;3.200,0;Gleich
+CZ-OE;1.750,0;1.750,0;1.750,0;Gleich
+baltic-SE;700,0;700,0;700,0;Gleich
+DK-UK;1.319,5;1.400,0;1.319,4;Geringe Abw. (-6%),  
+baltic-FI;1.016,0;1.016,0;1.016,0;Gleich
+NO-UK;1.464,0;1.464,0;1.464,0;Gleich
+OE-adriatic;4.862,2;5.540,0;4.862,2;Moderate Abw. (-12%), evtl. NECP-Projekt
+adriatic-GR;1.375,0;1.375,0;1.375,0;Gleich
+OE-GR;1.550,0;1.550,0;1.550,0;Gleich
+IE-UK;2.225,0;2.225,0;2.225,0;Gleich
+FR-UK;5.400,0;5.400,0;5.400,0;In ERAA aber nicht in Paper mentioned (HVDC)
+NL-UK;1.000,0;1.000,0;1.000,0;In ERAA aber nicht in Paper mentioned (HVDC)
+NL-NO;700,0;700,0;700,0;In ERAA aber nicht in Paper mentioned (HVDC)
+FR-IE;700;700,0;700,0;In ERAA aber nicht in Paper mentioned (HVDC)
+;;;;
+;;;;

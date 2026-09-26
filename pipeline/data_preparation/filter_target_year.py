@@ -1,28 +1,30 @@
 """
-Einfaches Filter-Skript für CSV-Dateien in 01_data/02_processed.
+Schritt 3: Zieljahr herausfiltern
+=================================
+Kopiert aus config.PROCESSED_DIR nur die Dateien, die für das Zieljahr
+(config.TARGET_YEAR) gebraucht werden, nach config.FILTERED_DIR. Die Daten in
+02_processed bleiben unverändert.
 
-- Feste Ordner werden komplett kopiert.
-- In anderen Ordnern werden nur Dateien übernommen, deren die Jahreszahl im Ordnernamen steht.
-
-Ziel: Kopiere ausgewählte CSVs nach
-"01_data/02_processed/03_filtered_data_for_prediction_year".
+- Ordner in COPY_ALL_FOLDERS werden komplett kopiert.
+- In YEAR_FILTER_FOLDERS werden nur Dateien übernommen, in deren Pfad das
+  Zieljahr vorkommt (z.B. ".../PECD_Wind_Onshore_2030_edition 2022.1/...").
 """
 
 import logging
 import shutil
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import config
+
 logger = logging.getLogger(__name__)
 
-SOURCE_DIR = Path("01_data/02_processed")
-# Ziel: 03_filtered_data_for_prediction_year, damit die Originaldaten in 02_processed unverändert bleiben.
-DEST_DIR = Path("01_data/03_filtered_data_for_prediction_year")
+SOURCE_DIR = config.PROCESSED_DIR
+DEST_DIR = config.FILTERED_DIR
 
 # Ordner, die immer komplett unverändert übernommen werden.
 COPY_ALL_FOLDERS = [
     "Additional Data/Annex 1 - Input data",
-    "ERAA 2022 PEMMDB National Estimates",
+    config.NATIONAL_ESTIMATES_DIRNAME,
 ]
 
 # Ordner, in denen nur Dateien mit der Jahreszahl im Namen übernommen werden.
@@ -59,7 +61,8 @@ def copy_file(csv_path, source_root, dest_root):
     logger.info(f"Kopiere: {relative_path}")
 
 
-def main(year):
+def main(year: int = config.TARGET_YEAR):
+    year = str(year)
     source_dir = SOURCE_DIR
     dest_dir = DEST_DIR
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -87,11 +90,5 @@ def main(year):
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--year", default="2030",
-                        help="Zieljahr (Target Year), z.B. 2030 (Default: 2030)")
-    args = parser.parse_args()
-
-    main(args.year.strip())
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    main()

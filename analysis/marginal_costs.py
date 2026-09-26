@@ -1,6 +1,6 @@
 """
-99_marginal_costs.py
-
+marginal_costs.py
+=================
 Berechnet Grenzkosten aller Energiequellen über alle simulierten Klimajahre.
 
 Für jeden Carrier × Zone × Jahr:
@@ -9,16 +9,25 @@ Für jeden Carrier × Zone × Jahr:
   - mc_dispatch_weighted       : dispatch-gewichtete Grenzkosten
   - lmp_at_dispatch_eur_mwh   : Ø Strompreis (LMP) in Stunden, in denen die Quelle aktiv war
 
+Liest alle Ergebnisordner in 04_results/ (von main/run_simulation.py).
+
+Aufruf (aus dem Projekt-Root):
+    python analysis/marginal_costs.py
 Output: 04_results/grenzkosten_summary.csv
 """
 
-from pathlib import Path
 import re
+import sys
+from pathlib import Path
+
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import config
+
 # ── Pfade ────────────────────────────────────────────────────────────────────
-_ROOT        = Path(__file__).resolve().parents[2]
-RESULTS_DIR  = _ROOT / "04_results"
+RESULTS_DIR  = config.RESULTS_DIR
 OUT_FILE     = RESULTS_DIR / "grenzkosten_summary.csv"
 
 _CY_RE = re.compile(r"CY(\d{4})")

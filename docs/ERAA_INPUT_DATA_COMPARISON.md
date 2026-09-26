@@ -32,7 +32,7 @@ möglich und teils vermerkt.
 1. **PEMMDB als eigene, benannte Kategorie verschwindet nach 2023.** 2022/2023
    gab es eine klar identifizierbare "PEMMDB National Estimates"/"PEMMDB
    Generation"-Datei — genau die Quelle, die
-   `06_filter_and_accu_PEMMCD_National_Estimates.py` in der Pipeline
+   `aggregate_national_estimates.py` in der Pipeline
    verarbeitet. Ab 2024 taucht "PEMMDB" auf der Download-Seite nicht mehr als
    eigener Eintrag auf; die Generatoren-/Kapazitätsdaten stecken vermutlich
    jetzt in "Economic and Technical Investment Parameters" und/oder "Other
@@ -43,7 +43,7 @@ möglich und teils vermerkt.
    Data" inkl. Hydro), 2023 aufgeteilt in "PECD" (klein) + separates "Hydro
    Dataset" (groß, nachträglich ergänzt), ab 2024 wieder anders aufgeteilt in
    "PECD - RES" vs. "PECD - Weather". Das exakte Aufteilungsschema, das
-   `03_climate_accumulate_data_per_node.py` heute für 2022 annimmt (ein
+   `aggregate_climate_data.py` heute für 2022 annimmt (ein
    Ordner mit Wind/Solar/Hydro-Unterordnern), ist also nicht die Norm über
    die Jahrgänge hinweg — es war sogar innerhalb von 2023 selbst nicht
    stabil (Hydro kam nachträglich als separates Datenpaket dazu).
@@ -82,7 +82,7 @@ das Format ist grundlegend anders:
   year, Market_Node, Technology, Technology_Simplified,
   Operational_Status, Value` — eine Zeile pro (Zone, Technologie, Status),
   nicht eine Zeile pro Zone mit einer Spalte pro Technologie wie in
-  `TY 2030.csv`. `load_zone_capacities.py` (Spalten-Mapping,
+  `TY 2030.csv`. `zone_capacities.py` (Spalten-Mapping,
   `pd.read_csv(path, index_col=0)`) kann das nicht ohne Pivot verarbeiten.
 - **Drei Datenversionen in einer Datei gemischt**: `data_version` enthält
   `"ERAA 2024"`, `"ERAA 2025 pre-CfE"` UND `"ERAA 2025 final"` — ohne
@@ -104,7 +104,7 @@ das Format ist grundlegend anders:
   `Solar (thermal)`, `Solar thermal with/without storage`), Wind Offshore
   in `fixed`/`floating`, Biomasse/Sonstige-EE in `Biofuel`, `Small
   biomass`, `Waste`, `Geothermal`, `Marine`, `Not defined or splitting not
-  known RES`. Das heutige `COLUMN_MAP` in `load_zone_capacities.py`
+  known RES`. Das heutige `COLUMN_MAP` in `zone_capacities.py`
   (1:1-Zuordnung Spaltenname→interner Key) reicht als Konzept nicht mehr —
   es braucht eine Viele-zu-eins-Aggregationsregel pro Modell-Kategorie.
 - **Vier Zieljahre in einer Datei**: `Target year` ∈ {2028, 2030, 2033,
@@ -130,7 +130,7 @@ Kalenderjahr als Spaltenname (z. B. `"2012"`). Um weiterhin ein
 bestimmtes historisches Wetterjahr auszuwählen, braucht es zusätzlich die
 neu mitgelieferte `PECD - weather/WeatherScenarios_Mapping.xlsx` als
 Übersetzungstabelle WS-Code → Kalenderjahr — eine Indirektionsebene, die
-es 2022 nicht gab. `_find_climate_col()` in `load_timeseries.py` (sucht
+es 2022 nicht gab. `_find_climate_col()` in `timeseries.py` (sucht
 Spalte per `str(col).startswith(climate_year)`) funktioniert mit diesem
 Schema nicht mehr.
 
@@ -164,7 +164,7 @@ Unit-Commitment-artigen Mindestlaufzeiten — die eigene Pipeline ignoriert
 das bewusst, siehe `MODEL_DOCUMENTATION_FOR_PAPER_COMPARISON.md`
 Abschnitt 11). Zusätzlich neue Sheets `Hydro Normal/Dry/Wet` und `Hydro
 Yearly Classification` — ein Trocken-/Normal-/Nassjahr-Szenariokonzept für
-Hydrologie, das es 2022 in dieser Form nicht gab. `gather_global_params.py`
+Hydrologie, das es 2022 in dieser Form nicht gab. `global_params.py`
 müsste nicht nur neue Pfade, sondern eine neue Aggregationsentscheidung
 treffen (welche Vintage-Variante als "der" Wert je Grobkategorie gilt).
 
@@ -192,16 +192,16 @@ ERAA 2025 oder 2026 laufen zu lassen — insbesondere weil:
 
 - die PEMMDB-Datenquelle (Kernstück von Schritt 06 der Pipeline) ab 2024 in
   ihrer bisherigen Form nicht mehr existiert,
-- die Klimadaten-Ordnerstruktur, auf der `01_excel_to_csv.py` und
-  `03_climate_accumulate_data_per_node.py` aufbauen, sich mindestens zweimal
+- die Klimadaten-Ordnerstruktur, auf der `excel_to_csv.py` und
+  `aggregate_climate_data.py` aufbauen, sich mindestens zweimal
   geändert hat (2022→2023, 2023→2024),
 - selbst *innerhalb* eines ERAA-Jahrgangs Nachträge/Versionsstände (v1/v2,
   Change Logs) vorkommen.
 
 **Empfehlung:** Phase 4 nicht als "ERAA-Jahr als Parameter" verstehen,
 sondern als **Adapter-Schicht pro ERAA-Jahrgang**: ein stabiler Kern
-(`build_network.py`, `gather_global_params.py`, `load_zone_capacities.py`,
-`load_timeseries.py` — die alle mit dem bereits vereinheitlichten Format in
+(`build_network.py`, `global_params.py`, `zone_capacities.py`,
+`timeseries.py` — die alle mit dem bereits vereinheitlichten Format in
 `01_data/04b_accumulated_data_per_node/` arbeiten) bleibt unverändert; davor
 kommt pro ERAA-Jahrgang ein eigenes, austauschbares Set von
 Einlese-/Umformungs-Skripten (heute: 01–06), das auf das jeweilige

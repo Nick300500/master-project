@@ -2,9 +2,15 @@
 paper_interconnections.py
 ==========================
 Lädt Interconnection-Kapazitäten aus der paper-eigenen NTC-Tabelle
-(statt aus den ERAA-Rohdaten via add_interconnections.py) und fügt sie
-als Links ins Netz ein. Für Simulationsläufe, die die exakten NTC-Werte
-aus dem Nature-Energy-Paper reproduzieren sollen.
+(config.PAPER_NTC_CSV, statt der ERAA-Daten aus eraa_interconnections.py)
+und fügt sie als Links ins Netz ein (--interconnections paper). Für
+Simulationsläufe, die die exakten NTC-Werte aus dem Nature-Energy-Paper
+reproduzieren sollen.
+
+Erwartetes CSV-Format (Semikolon, deutsches Zahlenformat):
+    Linie;ERAA (...);Paper;...
+    ES-PT;3.850,0;3.850,0;...
+Jede Zeile ergibt zwei Links (beide Richtungen) mit der Kapazität "Paper".
 """
 
 import logging
@@ -12,6 +18,8 @@ from pathlib import Path
 
 import pandas as pd
 import pypsa
+
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +66,8 @@ def _load_paper_ntc(ntc_csv: Path, active_zones: list) -> list:
     return result
 
 
-def add_paper_interconnections(n: pypsa.Network, ntc_csv: Path, active_zones: list) -> None:
+def add_paper_interconnections(n: pypsa.Network, active_zones: list,
+                               ntc_csv: Path = config.PAPER_NTC_CSV) -> None:
     """Fügt Interconnection-Links aus der Paper-NTC-Tabelle ins Netz ein."""
     ntc_rows = _load_paper_ntc(ntc_csv, active_zones)
     added, skipped = 0, 0
@@ -85,7 +94,7 @@ def add_paper_interconnections(n: pypsa.Network, ntc_csv: Path, active_zones: li
         n.add("Link", link_name,
               bus0=frm, bus1=to,
               p_nom=cap, p_min_pu=0.0,
-              efficiency=1.0, carrier="AC")
+              efficiency=config.LINK_EFFICIENCY, carrier="AC")
         logger.info("  Paper NTC %s -> %s: %.0f MW", frm, to, cap)
         added += 1
 

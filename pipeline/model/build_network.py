@@ -1,20 +1,16 @@
 """
 build_network.py
-=================
-Baut ein PyPSA-Netz für beliebige Zonen auf.
-Nutzt gather_global_params.py, load_zone_capacities.py und
-load_timeseries.py als Datenquellen.
+================
+Baut ein PyPSA-Netz für beliebige Zonen auf: Busse, Kraftwerke, Speicher,
+DSR, Lastabwurf und Last. Datenquellen sind global_params.py,
+zone_capacities.py und timeseries.py; Leitungen kommen danach über
+eraa_interconnections.py bzw. paper_interconnections.py dazu.
 
 Verwendung:
-    from build_network import build_network
+    from pipeline.model.build_network import build_network
     n = build_network(active_zones=["DE"], climate_year="2012")
 
-Zonen schrittweise erweitern:
-    ACTIVE_ZONES = ["DE"]                          # Start
-    ACTIVE_ZONES = ["DE", "FR", "AT", "NL"]       # Schritt 2
-    ACTIVE_ZONES = ALL_ZONES                       # Vollständig
-
-Hinweise zur Hydro-Modellierung:
+Hinweise zur Hydro-Modellierung (Wirkungsgrade in config.py):
     - Reservoir:   efficiency_store=1.0 (kein Pumpverlust), efficiency_dispatch=0.87
     - PSOpen:      efficiency_store=0.87 (Pumpverlust), p_min_pu aus Pumping-Kapazität
     - PSClosed:    efficiency_store=0.87, kein natürlicher Inflow
@@ -23,44 +19,19 @@ Hinweise zur Hydro-Modellierung:
       norwegische Reservoir-System. Keine Umleitungslogik nötig — ERAA ist konsistent.
 """
 
-import pypsa
-import pandas as pd
-import numpy as np
 import logging
-from pathlib import Path
 
-# ── Imports der eigenen Module ───────────────────────────────────────────────
-import sys
-sys.path.insert(0, str(Path(__file__).parent))
+import pandas as pd
+import pypsa
 
-from gather_global_params import get_simulation_params, compute_marginal_costs
-from load_zone_capacities import load_all_zones, get_zone_capacities
-from load_timeseries import load_zone_timeseries
+import config
+from pipeline.model.global_params import get_simulation_params
+from pipeline.model.timeseries import load_zone_timeseries
+from pipeline.model.zone_capacities import get_zone_capacities, load_all_zones
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# ── Alle verfügbaren Zonen ───────────────────────────────────────────────────
-ALL_ZONES = [
-    "DE", "FR", "AT", "BE", "NL", "CH", "CZ", "PL", "DK",
-    "ES", "PT", "IT", "GR", "SE", "NO", "FI", "UK", "IE",
-    "LU", "MT", "CY", "TR", "UA",
-    "adriatic", "baltic", "other eastern european",
-]
-
-# ── DSR-Pfad ─────────────────────────────────────────────────────────────────
-_PROJECT_ROOT = Path(__file__).parent.parent.parent
-DSR_PATH = (_PROJECT_ROOT / "01_data/04b_accumulated_data_per_node"
-            / "ERAA 2022 PEMMDB National Estimates/Explicit DSR.csv")
-
-# ── ERAA 2022 Hydro-Effizienz-Konstanten ────────────────────────────────────
-# Turbinen-Wirkungsgrad (Dispatch): einheitlich für alle Hydro-Typen
-HYDRO_EFF_DISPATCH = 0.87
-# Pump-Wirkungsgrad (Store): nur für echte Pumpspeicher (PS Open/Closed)
-HYDRO_EFF_STORE    = 0.87
-# Reservoir speichert Wasser ohne Energieverlust (kein Pumpen)
-RESERVOIR_EFF_STORE = 1.0
+DSR_PATH = config.ACCUMULATED_DIR / config.NATIONAL_ESTIMATES_DIRNAME / "Explicit DSR.csv"
 
 
 # ── Hilfsfunktion: DSR für eine Zone laden ───────────────────────────────────
@@ -114,7 +85,7 @@ def _pumping_p_min_pu(caps: dict,
         logger.warning(
             f"  {zone}: '{pumping_key}' nicht in caps — "
             f"p_min_pu=-1 (volle Pumpleistung). Pumping-Key in "
-            f"load_zone_capacities.py prüfen."
+            f"zone_capacities.py prüfen."
         )
         return -1.0
 
@@ -144,9 +115,9 @@ def add_zone(n: pypsa.Network,
     Args:
         n     : PyPSA-Netz
         zone  : Zonenname z.B. "DE"
-        caps  : Kapazitäten aus 08_load_zone_capacities
-        ts    : Zeitreihen aus 09_load_timeseries
-        params: Globale Parameter aus 07_gather_global_params
+        caps  : Kapazitäten aus zone_capacities.get_zone_capacities()
+        ts    : Zeitreihen aus timeseries.load_zone_timeseries()
+        params: Globale Parameter aus global_params.get_simulation_params()
     """
     mc = params["marginal_costs"]
 
@@ -264,8 +235,8 @@ def add_zone(n: pypsa.Network,
               p_min_pu=0.0,                        # kein Pumpen, nur Turbinieren
               marginal_cost=0.0,
               carrier="hydro",
-              efficiency_store=RESERVOIR_EFF_STORE, # 1.0: Wasser stauen ohne Verlust
-              efficiency_dispatch=HYDRO_EFF_DISPATCH,
+              efficiency_store=config.RESERVOIR_EFFICIENCY_STORE,
+              efficiency_dispatch=config.HYDRO_EFFICIENCY_DISPATCH,
               cyclic_state_of_charge=True,
               max_hours=caps["max_hours_hydro_reservoir"])
         n.storage_units_t.inflow[f"Reservoir_{zone}"] = ts["hydro_reservoir"]
@@ -294,8 +265,8 @@ def add_zone(n: pypsa.Network,
               p_min_pu=p_min_pu_ps_open,
               marginal_cost=0.0,
               carrier="hydro",
-              efficiency_store=HYDRO_EFF_STORE,
-              efficiency_dispatch=HYDRO_EFF_DISPATCH,
+              efficiency_store=config.HYDRO_EFFICIENCY_STORE,
+              efficiency_dispatch=config.HYDRO_EFFICIENCY_DISPATCH,
               cyclic_state_of_charge=True,
               max_hours=caps["max_hours_ps_open"])
         n.storage_units_t.inflow[f"PSOpen_{zone}"] = ts["hydro_ps_open"]
@@ -315,8 +286,8 @@ def add_zone(n: pypsa.Network,
               p_min_pu=p_min_pu_ps_closed,
               marginal_cost=0.0,
               carrier="hydro",
-              efficiency_store=HYDRO_EFF_STORE,
-              efficiency_dispatch=HYDRO_EFF_DISPATCH,
+              efficiency_store=config.HYDRO_EFFICIENCY_STORE,
+              efficiency_dispatch=config.HYDRO_EFFICIENCY_DISPATCH,
               cyclic_state_of_charge=True,
               max_hours=caps["max_hours_ps_closed"])
         # Kein Inflow für geschlossene Systeme
@@ -329,8 +300,8 @@ def add_zone(n: pypsa.Network,
               p_min_pu=-1.0,                       # volle Ladeleistung = p_nom
               marginal_cost=0.0,
               carrier="battery",
-              efficiency_store=0.92,
-              efficiency_dispatch=0.92,
+              efficiency_store=config.BATTERY_EFFICIENCY_STORE,
+              efficiency_dispatch=config.BATTERY_EFFICIENCY_DISPATCH,
               cyclic_state_of_charge=True,
               max_hours=caps["max_hours_battery"])
 
@@ -374,38 +345,27 @@ def add_zone(n: pypsa.Network,
 # ── Haupt-API ────────────────────────────────────────────────────────────────
 def build_network(active_zones: list = None,
                   climate_year: str = "2012",
-                  target_year: int = 2030,
-                  gas_price_eur_mwh_th: float = None) -> pypsa.Network:
+                  target_year: int = config.TARGET_YEAR) -> pypsa.Network:
     """
     Baut ein vollständiges PyPSA-Netz für die gewählten Zonen.
 
     Args:
         active_zones : Liste der Zonen z.B. ["DE"] oder ["DE", "FR", "AT"]
-                       None → alle verfügbaren Zonen
+                       None → config.ACTIVE_ZONES
         climate_year : Klimajahr für Zeitreihen z.B. "2012"
-        target_year  : Zieljahr für Kapazitäten und Parameter (2030)
+        target_year  : Zieljahr für Kapazitäten und Parameter
 
     Returns:
-        pypsa.Network mit allen Komponenten, bereit zur Optimierung
+        pypsa.Network mit allen Komponenten (noch ohne Leitungen)
     """
     if active_zones is None:
-        active_zones = ALL_ZONES
+        active_zones = config.ACTIVE_ZONES
 
     logger.info(f"Baue Netz für {len(active_zones)} Zonen: {active_zones}")
     logger.info(f"Klimajahr: {climate_year}, Zieljahr: {target_year}")
 
     # ── Globale Parameter laden ───────────────────────────────────────────────
     params = get_simulation_params(target_year)
-
-    if gas_price_eur_mwh_th is not None:
-        params["fuel_costs"]["gas"] = gas_price_eur_mwh_th
-        params["marginal_costs"] = compute_marginal_costs(
-            params["fuel_costs"], params["efficiencies"],
-            params["co2_factors"], params["co2_price"],
-            vom=params["vom_costs"],
-        )
-        logger.info(f"Gas-Preis überschrieben: {gas_price_eur_mwh_th:.2f} €/MWh_th "
-                    f"→ Gas-CCGT MC = {params['marginal_costs']['gas_ccgt']:.2f} €/MWh_el")
 
     # ── Kapazitätstabelle laden ───────────────────────────────────────────────
     caps_df = load_all_zones()
@@ -453,57 +413,3 @@ def build_network(active_zones: list = None,
     n.consistency_check()
 
     return n
-
-
-# ── Direkt ausführbar zum Testen ─────────────────────────────────────────────
-if __name__ == "__main__":
-    import sys
-
-    ACTIVE_ZONES = ["NO"]
-    CLIMATE_YEAR = "2012"
-
-    n = build_network(active_zones=ACTIVE_ZONES, climate_year=CLIMATE_YEAR)
-
-    print("\n── Debug: Netz-Übersicht ──")
-    print(f"Busse:       {list(n.buses.index)}")
-    print(f"Generatoren: {len(n.generators)}")
-    print(f"Speicher:    {len(n.storage_units)}")
-    print(f"Lasten:      {len(n.loads)}")
-    print(f"Snapshots:   {len(n.snapshots)}")
-
-    print("\n── Kapazitäten ──")
-    print(n.generators[["p_nom", "marginal_cost"]].to_string())
-    print(n.storage_units[["p_nom", "max_hours", "p_min_pu"]].to_string())
-
-    print("\n── Optimierung ──")
-    status, condition = n.optimize(
-        solver_name="gurobi",
-        solver_options={
-            "Method"        : 2,
-            "Crossover"     : 0,
-            "Threads"       : 4,
-            "BarConvTol"    : 1e-6,
-            "DualReductions": 0,
-        }
-    )
-
-    if status != "ok":
-        print(f"Optimierung fehlgeschlagen: {status}, {condition}")
-        sys.exit(1)
-
-    lmp = n.buses_t.marginal_price
-    for zone in ACTIVE_ZONES:
-        if zone in lmp.columns:
-            print(f"\n── Preiszeitreihe {zone} ──")
-            print(f"  Jahres-Ø:  {lmp[zone].mean():.2f} €/MWh")
-            print(f"  Median:    {lmp[zone].median():.2f} €/MWh")
-            print(f"  p95:       {lmp[zone].quantile(0.95):.2f} €/MWh")
-
-    print("\n── Erzeugung (GWh/Jahr) ──")
-    for gen in n.generators.index:
-        gwh = n.generators_t.p[gen].sum() / 1000
-        if gwh > 0.1:
-            print(f"  {gen:30s}: {gwh:8.1f} GWh")
-
-    print("\n── Speicher p_min_pu (Pumpleistungs-Check) ──")
-    print(n.storage_units[["p_nom", "p_min_pu", "max_hours"]].to_string())

@@ -1,23 +1,34 @@
 """
-Skript-Grundgerüst für die Datenakkumulation pro Netz-Knoten.
+Schritt 5: Klimadaten je Modellzone aggregieren
+===============================================
+Fasst die Zeitreihen aus config.FILTERED_DIR/Climate Data (Wind, Solar, CSP,
+Hydro-Inflows) von ERAA-Zonen (z.B. DE00, HR00, NOM1) auf Modellzonen
+zusammen (config.ZONE_GROUPS, sonst Ländercode) und schreibt je Zone eine
+Datei "<Zone>_accumulated.csv" nach config.ACCUMULATED_DIR.
 
-Dieses Skript soll Daten aus verarbeiteten CSV-Dateien einlesen,
-pro Knotengruppe zusammenfassen und als aggregierte Tabelle speichern.
+- Wind/Solar (Kapazitätsfaktoren): mit der installierten Leistung der
+  Teilzonen gewichteter Mittelwert (Gewichte aus der in Schritt 4 gedrehten
+  Kapazitätstabelle).
+- Alles andere (Hydro-Inflows in GWh): Summe.
 
+Pro Ordner entsteht zusätzlich "01_group_summary.csv" (welche Dateien in
+welche Zone eingegangen sind).
 """
 
-from pathlib import Path
+import csv
 import logging
 import re
-import csv
-import shutil
+from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import pandas as pd
+
+import config
+
 logger = logging.getLogger(__name__)
 
-
-SOURCE_DIR = Path("01_data/03_filtered_data_for_prediction_year")
-OUTPUT_DIR = Path("01_data/04b_accumulated_data_per_node")
+SOURCE_DIR = config.FILTERED_DIR
+OUTPUT_DIR = config.ACCUMULATED_DIR
+PNOM_PATH = SOURCE_DIR / config.NATIONAL_ESTIMATES_DIRNAME / f"TY {config.TARGET_YEAR}.csv"
 
 def remove_duplicate_files(root_dir: Path):
     """Entferne CSV-Duplikate, die ein '(' im Dateinamen enthalten."""
@@ -28,21 +39,13 @@ def remove_duplicate_files(root_dir: Path):
             removed += 1
     logger.info(f"Doppelte Dateien entfernt: {removed}")
 
-GROUP_RULES = {
-    "adriatic": ["AL", "BA", "HR", "ME", "MK", "RS", "SI"],
-    "baltic": ["EE", "LV", "LT"],
-    "other eastern european": ["BG", "HU", "RO", "SK"],
-}
-
+# Ordner, die hier nicht aggregiert werden (andere Schritte zuständig)
 EXCLUDE_FOLDERS = [
     "Additional Data",
-    "ERAA 2022 PEMMDB National Estimates",
+    config.NATIONAL_ESTIMATES_DIRNAME,
     "Transfer capacities",
     "Demand",
-    
 ]
-
-ZONE_PATTERN = re.compile(r"\b([A-Za-z]{2}\d{0,2})\b")
 
 
 def is_excluded_folder(relative_folder: Path) -> bool:
@@ -82,29 +85,11 @@ def extract_zone_from_path(csv_path: Path) -> str:
     for part in csv_path.parts:
         for match in ZONE_SHORT_PATTERN.findall(part):
             normalized = normalize_zone(match)
-            if normalized in {z for zones in GROUP_RULES.values() for z in zones}:
+            if normalized in {z for zones in config.ZONE_GROUPS.values() for z in zones}:
                 return normalized
     stem = csv_path.stem
     fallback = stem.split()[0].split("_")[0].upper()
     return normalize_zone(fallback)
-
-
-def parse_value(value: str):
-    text = value.strip()
-    if text == "":
-        return ""
-    try:
-        return int(text)
-    except ValueError:
-        pass
-    try:
-        return float(text.replace(",", "."))
-    except ValueError:
-        return text
-
-
-def is_numeric_value(value) -> bool:
-    return isinstance(value, (int, float))
 
 
 def format_value(value):
@@ -127,17 +112,14 @@ def try_float(value):
     return None
 
 
-import pandas as pd
+# ── p_nom-Tabelle (Gewichte für Wind/Solar), wird in main() geladen ─────────
+PNOM_TABLE = None
 
-# ── p_nom Tabelle global laden ──────────────────────────────────────────────
-PNOM_PATH = Path("01_data/03_filtered_data_for_prediction_year/ERAA 2022 PEMMDB National Estimates/TY 2030.csv")
 
 def load_pnom_table(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path, index_col=0)
     df.index = df.index.map(normalize_zone)
     return df.groupby(df.index).sum()
-
-PNOM_TABLE = load_pnom_table(PNOM_PATH) if PNOM_PATH.exists() else None
 
 
 def get_pnom_weight(zone: str, folder_name: str) -> float:
@@ -222,7 +204,7 @@ def accumulate_group_files(output_folder: Path, group_name: str, files: list[Pat
 
     # ── NEU: Alle Dateien auf gleiche maximale Spaltenanzahl normieren ──
     if all_file_rows:
-        max_cols = max(len(row) for file_rows in all_file_rows 
+        max_cols = max(len(row) for file_rows in all_file_rows
                        for row in file_rows if row)
         normalized_all = []
         for file_rows in all_file_rows:
@@ -233,7 +215,7 @@ def accumulate_group_files(output_folder: Path, group_name: str, files: list[Pat
                 normalized.append(row)
             normalized_all.append(normalized)
         all_file_rows = normalized_all
-    
+
     if not all_file_rows:
         return
 
@@ -282,7 +264,6 @@ def accumulate_group_files(output_folder: Path, group_name: str, files: list[Pat
             # Zonen mit Gewicht 0 gehen nicht in Zähler/Nenner ein,
             # weil norm_weights[i] = 0 für diese Zonen.
             weighted_sums = {}
-            weighted_counts = {}  # Summe der Gewichte pro Spalte (für korrekte Normierung)
 
             for col_idx in range(2, max(len(r) for r in all_file_rows if row_idx < len(r))):
                 weighted_val = 0.0
@@ -366,7 +347,7 @@ def accumulate_data_per_node(source_dir: Path, output_dir: Path):
         group_files: dict[str, list[Path]] = {}
         for csv_path in csv_paths:
             zone  = extract_zone_from_path(csv_path)
-            group = resolve_group(zone, GROUP_RULES)
+            group = resolve_group(zone, config.ZONE_GROUPS)
             logger.info(f"  - {csv_path.name} -> zone={zone}, group={group}")
             group_files.setdefault(group, []).append(csv_path)
 
@@ -387,6 +368,12 @@ def accumulate_data_per_node(source_dir: Path, output_dir: Path):
 
 
 def main():
+    global PNOM_TABLE
+    if PNOM_PATH.exists():
+        PNOM_TABLE = load_pnom_table(PNOM_PATH)
+    else:
+        logger.warning(f"{PNOM_PATH} fehlt - Wind/Solar werden ungewichtet gemittelt. "
+                       f"Schritt 4 (transpose_capacity_table) vorher ausführen.")
     output_dir = OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
     remove_duplicate_files(SOURCE_DIR)
@@ -394,4 +381,5 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     main()
